@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Port / Portfolio workspace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="shell">
+    <nav class="tabs" aria-label="Portfolio views">
+      <button class="tab is-active" data-tab="overview" aria-selected="true"><span class="tab-number">01</span>Overview</button>
+      <button class="tab" data-tab="holdings" aria-selected="false"><span class="tab-number">02</span>Holdings</button>
+      <button class="tab" data-tab="accounts" aria-selected="false"><span class="tab-number">03</span>Account drilldown</button>
+    </nav>
+
+    <div id="app" aria-live="polite">
+      <section class="tab-panel is-visible" id="overview-panel" data-panel="overview">
+        <div class="section-heading"><div><h2>Portfolio overview</h2></div><span class="account-count" id="account-count">-- accounts</span></div>
+        <div class="metric-grid" id="metrics"></div>
+        <div class="content-grid overview-grid">
+          <article class="panel performance-panel"><div class="panel-heading"><div><p class="eyebrow">Account total</p><h3>Value over time</h3></div><span class="period-chip">12 months</span></div><div class="chart-wrap"><svg id="performance-chart" viewBox="0 0 760 260" role="img" aria-label="Portfolio value trend"></svg></div><div class="chart-axis"><span>Oct 25</span><span>Jan 26</span><span>Apr 26</span><span>Jul 26</span><span>Sep 26</span></div></article>
+          <article class="panel allocation-panel"><div class="panel-heading"><div><p class="eyebrow">By account</p><h3>Allocation</h3></div></div><div class="allocation-body"><div class="donut" id="allocation-donut"><div class="donut-hole"><strong id="donut-total">--</strong><span>total</span></div></div><div class="legend" id="allocation-legend"></div></div></article>
+        </div>
+        <article class="panel table-panel"><div class="panel-heading"><div><p class="eyebrow">Latest position</p><h3>Account summary</h3></div><span class="muted" id="summary-note">--</span></div><div class="table-scroll"><table><thead><tr><th>Account</th><th>Type</th><th>Holdings</th><th>Current value</th><th>Return</th><th></th></tr></thead><tbody id="account-summary"></tbody></table></div></article>
+      </section>
+
+      <section class="tab-panel" id="holdings-panel" data-panel="holdings">
+        <div class="content-grid holdings-grid"><article class="panel table-panel"><div class="panel-heading"><div><p class="eyebrow">Consolidated positions</p><h3>All stocks and funds</h3></div><span class="count-chip" id="holding-count">-- positions</span></div><div class="table-scroll"><table><thead><tr><th>Position</th><th>Sector</th><th>Northstar IRA shares</th><th>Harbor 401(k) shares</th><th>TOTAL shares</th><th>TOTAL Cost Basis</th><th>TOTAL dollars</th><th>% Return</th><th>Portfolio %</th></tr></thead><tbody id="holdings-table"></tbody></table></div></article><article class="panel sector-panel"><div class="panel-heading"><div><p class="eyebrow">Portfolio composition</p><h3>Sector breakdown</h3></div></div><div id="sector-breakdown" class="sector-list"></div></article></div>
+      </section>
+
+      <section class="tab-panel" id="accounts-panel" data-panel="accounts">
+        <div class="section-heading"><div><p class="eyebrow">Choose an account</p></div><select id="account-select" aria-label="Select an account"></select></div>
+        <div class="account-hero" id="account-hero"></div>
+        <div class="content-grid account-grid"><article class="panel table-panel"><div class="panel-heading"><div><p class="eyebrow">Current positions</p><h3>Holdings & cost basis</h3></div></div><div class="table-scroll"><table><thead><tr><th>Position</th><th>Shares</th><th>Cost basis</th><th>Market value</th><th>Gain / loss</th></tr></thead><tbody id="account-holdings"></tbody></table></div></article><article class="panel performance-card"><p class="eyebrow">Account performance</p><div class="big-return" id="account-return">--</div><p class="muted">Since contributions began</p><div class="progress-track"><div id="account-progress" class="progress-fill"></div></div><div class="performance-pair"><span>Contributed<strong id="account-contributions">--</strong></span><span>Cash<strong id="account-cash">--</strong></span></div></article></div>
+      </section>
+    </div>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

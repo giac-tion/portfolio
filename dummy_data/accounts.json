@@ -1,0 +1,35 @@
+{
+  "asOf": "2026-09-12",
+  "accounts": [
+    {
+      "id": "northstar-ira",
+      "name": "Northstar IRA",
+      "type": "Traditional IRA",
+      "provider": "Fidelity",
+      "cash": 8420.15,
+      "contributions": 48000,
+      "performance": 18.6,
+      "holdings": [
+        { "ticker": "VTI", "name": "Vanguard Total Stock Market ETF", "sector": "Broad market", "shares": 88, "costBasis": 17842.40, "price": 238.15, "change": 0.84 },
+        { "ticker": "MSFT", "name": "Microsoft", "sector": "Technology", "shares": 30, "costBasis": 9270.00, "price": 445.09, "change": 1.21 },
+        { "ticker": "JNJ", "name": "Johnson & Johnson", "sector": "Healthcare", "shares": 55, "costBasis": 8129.50, "price": 182.74, "change": -0.32 },
+        { "ticker": "NEE", "name": "NextEra Energy", "sector": "Utilities", "shares": 70, "costBasis": 4830.00, "price": 77.92, "change": 0.47 }
+      ]
+    },
+    {
+      "id": "harbor-401k",
+      "name": "Harbor 401(k)",
+      "type": "Employer 401(k)",
+      "provider": "Vanguard",
+      "cash": 1260.00,
+      "contributions": 72000,
+      "performance": 12.4,
+      "holdings": [
+        { "ticker": "VTI", "name": "Vanguard Total Stock Market ETF", "sector": "Broad market", "shares": 118, "costBasis": 22698.00, "price": 238.15, "change": 0.84 },
+        { "ticker": "AAPL", "name": "Apple", "sector": "Technology", "shares": 42, "costBasis": 7245.00, "price": 236.48, "change": 0.58 },
+        { "ticker": "AMZN", "name": "Amazon", "sector": "Consumer", "shares": 24, "costBasis": 3528.00, "price": 228.51, "change": 1.67 },
+        { "ticker": "BND", "name": "Vanguard Total Bond Market ETF", "sector": "Fixed income", "shares": 92, "costBasis": 6668.00, "price": 72.31, "change": -0.08 }
+      ]
+    }
+  ]
+}
