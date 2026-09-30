@@ -15,7 +15,48 @@
 * { box-sizing: border-box; }
 body { margin: 0; color: var(--ink); background: var(--paper); font-family: Manrope, sans-serif; font-size: 14px; }
 button, select { font: inherit; }
+[hidden] { display: none !important; }
+.google-button, .quiet-button { min-height: 42px; padding: 0 16px; color: var(--white); border: 1px solid var(--green); border-radius: 3px; background: var(--green); font-size: 12px; font-weight: 700; cursor: pointer; }
+.google-button:hover { background: #194532; }
+.quiet-button { color: var(--green); background: var(--white); }
+.auth-gate { max-width: 660px; margin: 10vh auto 0; padding: 58px; background: var(--white); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.auth-gate h1 { margin: 0 0 18px; font-size: 52px; }
+.auth-gate .lede { margin-bottom: 28px; }
+.notice { max-width: 900px; margin: 28px auto; padding: 16px 18px; color: #843f2d; border: 1px solid #f0c5b6; background: #fff5f0; line-height: 1.5; overflow-wrap: anywhere; }
+.overview-stamp { display: grid; gap: 6px; color: var(--muted); font-family: "DM Mono", monospace; font-size: 11px; text-align: right; }
+.summary-panel { margin-bottom: 12px; }
+.summary-table { width: min(100%, 720px); }
+.summary-table th, .summary-table td { padding: 14px 23px; }
+.summary-table td { color: var(--green); font-family: "DM Mono", monospace; font-size: 19px; text-align: right; }
+.chart-panel { min-width: 0; margin-bottom: 12px; overflow: hidden; }
+.chart-panel .chart-wrap { height: 320px; padding: 18px 20px 22px; }
+.chart-panel-large .chart-wrap-large { height: 430px; }
+.chart-panel .chart-wrap-account { height: 360px; }
+.chart-panel canvas { display: block; width: 100% !important; height: 100% !important; }
+.chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+.account-holdings-panel { margin-top: 12px; }
+.account-hero { align-items: center; }
+.account-hero .account-name { margin: 0; font-family: "DM Mono", monospace; font-size: 37px; }
+.account-hero .count-chip { color: var(--white); border-color: rgba(255,255,255,.3); background: transparent; }
+.account-holdings-panel .ticker { color: var(--green); }
+@media (max-width: 850px) {
+  .auth-gate { margin-top: 5vh; padding: 36px 26px; }
+  .auth-gate h1 { font-size: 42px; }
+  .chart-grid { grid-template-columns: 1fr; }
+  .overview-stamp { text-align: left; }
+}
+@media (max-width: 500px) {
+  .topbar { height: auto; min-height: 68px; gap: 12px; padding: 12px 18px; }
+  .topbar-meta { gap: 8px; }
+  #signed-in-email { display: none; }
+  .google-button, .quiet-button { min-height: 38px; padding: 0 11px; font-size: 11px; }
+  .summary-table th, .summary-table td { padding: 13px 16px; }
+  .chart-panel .chart-wrap { height: 270px; padding: 14px 12px 18px; }
+  .chart-panel-large .chart-wrap-large { height: 340px; }
+  .chart-panel .chart-wrap-account { height: 300px; }
+}
 .topbar { height: 76px; display: flex; align-items: center; justify-content: space-between; padding: 0 clamp(24px, 5vw, 76px); background: var(--white); border-bottom: 1px solid var(--line); }
+@media (max-width: 500px) { .topbar { height: auto; min-height: 68px; padding: 12px 18px; } }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); font-size: 22px; font-weight: 800; letter-spacing: -.06em; text-decoration: none; }
 .brand-mark { display: grid; place-items: center; width: 30px; height: 30px; color: var(--lime); background: var(--green); border-radius: 9px 9px 9px 2px; font-size: 17px; letter-spacing: 0; }
 .brand-dot { color: var(--green-bright); }
@@ -37,3 +78,77 @@ select { min-width: 220px; padding: 12px 35px 12px 14px; color: var(--green); bo
 footer { display: flex; justify-content: space-between; padding: 23px clamp(24px, 5vw, 76px); color: var(--muted); border-top: 1px solid var(--line); font-family: "DM Mono", monospace; font-size: 9px; letter-spacing: .08em; }
 @media (max-width: 850px) { .topbar-meta { display: none; }.shell { padding-top: 45px; }.intro { align-items: start; flex-direction: column; gap: 26px; }.date-stamp { text-align: left; }.metric-grid { grid-template-columns: repeat(2, 1fr); }.content-grid, .holdings-grid, .account-grid { grid-template-columns: 1fr; }.allocation-body { justify-content: center; }.account-hero { align-items: start; flex-direction: column; gap: 26px; }.hero-value { text-align: left; }.tabs { overflow-x: auto; }.tab { flex: 0 0 auto; }.section-heading { align-items: start; flex-direction: column; } }
 @media (max-width: 500px) { h1 { font-size: 43px; }.metric { min-height: 120px; padding: 16px; }.metric-value { font-size: 22px; }.allocation-body { align-items: start; flex-direction: column; }.donut { align-self: center; }.account-name { font-size: 28px; } select { width: 100%; }.section-heading select { min-width: 0; } footer { align-items: start; flex-direction: column; gap: 9px; } }
+
+.topbar-meta { display: flex !important; }
+.page-title { margin: 0; font-size: 30px; line-height: 1.1; letter-spacing: 0; font-weight: 700; }
+.overview-count { justify-content: flex-end; margin-bottom: 12px; }
+.account-count { flex: 0 0 auto; }
+.metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.metric { min-width: 0; min-height: 120px; padding: 20px; }
+.metric-label { margin-bottom: 14px; }
+.metric-value { overflow-wrap: anywhere; font-size: 26px; letter-spacing: 0; }
+.metric-note { margin: 0; }
+.overview-charts { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(290px, .9fr); gap: 12px; margin-bottom: 12px; }
+.chart-panel { margin-bottom: 0; }
+.overview-charts .chart-wrap { height: 300px; padding: 16px 20px 20px; }
+.chart-grid { gap: 12px; }
+.chart-grid .chart-wrap { height: 235px; }
+.chart-panel .chart-wrap-account { height: 340px; }
+.summary-panel { margin-top: 12px; }
+.summary-panel .panel-heading { align-items: center; padding-bottom: 12px; }
+.summary-panel tbody tr[data-account-id] { cursor: pointer; }
+.summary-panel tbody tr[data-account-id]:hover,
+.summary-panel tbody tr[data-account-id]:focus { background: #f2f7f2; outline: none; }
+.summary-panel td { transition: background-color .15s ease; }
+.account-hero .account-type { margin: 0; }
+.account-picker { align-items: center; margin-bottom: 24px; }
+.account-picker .eyebrow { margin: 0; }
+.account-picker select { min-width: 260px; }
+.account-hero { min-height: 190px; margin-bottom: 14px; }
+.account-hero .account-name { margin: 0 0 8px; color: var(--white); font-size: 38px; font-weight: 500; letter-spacing: 0; }
+.account-hero #account-brokerage-type { color: var(--lime); }
+.account-hero #account-holding-count { color: #bfd4c8; }
+.account-hero #account-return { color: var(--lime); font-family: "DM Mono", monospace; font-size: 12px; }
+.account-drilldown-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(290px, .9fr); gap: 14px; align-items: stretch; }
+.account-drilldown-grid .account-holdings-panel { min-width: 0; margin-top: 0; }
+.account-performance-panel { min-width: 0; padding: 24px; }
+.account-performance-panel .big-return { margin: 18px 0 12px; }
+.account-performance-panel .chart-wrap-account { height: 220px; padding: 8px 0 0; }
+.account-holdings-panel .panel-heading { padding-bottom: 12px; }
+.account-holdings-panel th, .account-holdings-panel td { padding-right: 14px; padding-left: 14px; }
+.account-detail-heading { align-items: center; padding-bottom: 14px; }
+.account-detail-heading h3 { font-size: 20px; }
+.account-detail-heading #account-date { margin: 0; font-size: 12px; text-align: right; }
+.account-performance-panel .big-return { margin-top: 4px; }
+
+@media (max-width: 850px) {
+  .topbar { gap: 12px; }
+  .topbar-meta { display: flex !important; }
+  .overview-charts { grid-template-columns: minmax(0, 1.4fr) minmax(260px, 1fr); }
+  .overview-charts .chart-wrap { height: 270px; }
+  .metric { padding: 16px; }
+  .metric-value { font-size: 22px; }
+  .account-drilldown-grid { grid-template-columns: 1fr; }
+  .account-performance-panel .chart-wrap-account { height: 260px; }
+}
+@media (max-width: 650px) {
+  .overview-charts { grid-template-columns: 1fr; }
+  .overview-charts .chart-wrap { height: 250px; }
+  .chart-grid { grid-template-columns: 1fr; }
+  .chart-grid .chart-wrap { height: 240px; }
+  .page-title { font-size: 26px; }
+}
+@media (max-width: 500px) {
+  .topbar { align-items: center; }
+  .topbar-meta { gap: 8px; }
+  .topbar-meta .live-dot, #signed-in-email { display: none; }
+  .page-title { font-size: 22px; }
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric { min-height: 112px; padding: 14px; }
+  .metric-value { font-size: 20px; }
+  .account-count { padding: 7px 9px; }
+  .account-picker { align-items: stretch; }
+  .account-picker select { min-width: 0; }
+  .account-hero .account-name { font-size: 30px; }
+  .account-hero .hero-value strong { font-size: 32px; }
+}
