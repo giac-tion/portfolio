@@ -35,7 +35,8 @@
     <nav class="tabs" aria-label="Portfolio views">
       <button class="tab is-active" data-tab="overview" aria-selected="true" type="button"><span class="tab-number">01</span>Overview</button>
       <button class="tab" data-tab="holdings" aria-selected="false" type="button"><span class="tab-number">02</span>Holdings</button>
-      <button class="tab" data-tab="accounts" aria-selected="false" type="button"><span class="tab-number">03</span>Account drilldown</button>
+      <button class="tab" data-tab="sectors" aria-selected="false" type="button"><span class="tab-number">03</span>Sectors</button>
+      <button class="tab" data-tab="accounts" aria-selected="false" type="button"><span class="tab-number">04</span>Account drilldown</button>
       <div class="overview-toolbar" aria-label="Overview controls">
         <label class="timeframe-control" for="overview-timeframe">
           <span>Timeframe</span>
@@ -86,6 +87,21 @@
     <section class="tab-panel" id="holdings-panel" data-panel="holdings">
       <div class="section-heading"><div><p class="eyebrow">Consolidated positions</p><h2>Holdings</h2></div></div>
       <article class="panel table-panel"><div class="table-scroll"><table id="holdings-table-view" data-sortable-table><thead id="holdings-header"></thead><tbody id="holdings-table"></tbody></table></div></article>
+    </section>
+
+    <section class="tab-panel" id="sectors-panel" data-panel="sectors">
+      <div class="section-heading"><div><p class="eyebrow">Portfolio allocation</p><h2>Sectors</h2></div></div>
+      <div class="sector-overview-grid">
+        <article class="panel chart-panel">
+          <div class="panel-heading"><div><h3>Current portfolio mix</h3></div></div>
+          <div class="chart-wrap sector-portfolio-chart-wrap"><canvas id="sector-portfolio-chart" role="img" aria-label="Current portfolio value by sector"></canvas></div>
+        </article>
+        <article class="panel chart-panel">
+          <div class="panel-heading"><div><h3>Sector composition over time</h3></div></div>
+          <div class="chart-wrap sector-history-chart-wrap"><canvas id="sector-history-chart" role="img" aria-label="Portfolio sector composition over time"></canvas></div>
+        </article>
+      </div>
+      <div class="sector-detail-grid" id="sector-detail-grid"></div>
     </section>
 
     <section class="tab-panel" id="accounts-panel" data-panel="accounts">

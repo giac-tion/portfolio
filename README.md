@@ -58,3 +58,6 @@ Example Firestore document shape:
 ```
 
 `data/process_data/symbol_prices.csv` is retained as a local data asset; the webpage does not load it.
+
+The Sectors view currently uses a hardcoded symbol-to-sector map in `app.js`. Symbols outside that map, along with portfolio value not represented by priced positions, are included in `Other`. 
+- UPDATE THE HARDCODED SYMBOL-TO-SECTOR MAP TO PULL FROM FIREBASE WHEN AVAILABLE IN FIREBASE!

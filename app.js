@@ -18,6 +18,15 @@ const provider = new GoogleAuthProvider();
 const chartInstances = {};
 const accountNames = Array.from({ length: 10 }, (_, index) => `account_${index + 1}`);
 const accountColors = ['#235c48', '#56b98a', '#e8896b', '#82b7c5', '#f5c85d', '#4776d0', '#b86f4b', '#609b79', '#8a9e47', '#637b8a'];
+const sectorDefinitions = {
+  // Paste the sector definitions from AppScript Here, EXAMPLE SECTORS/SYMBOLS:
+  SPY: ['SPY', 'QQQ', 'QQQM', 'VOO', 'VTI', 'VGT', 'VUG', 'VOOG'],
+  'Big Tech': ['MSFT', 'AMZN', 'META', 'GOOGL', 'AVGO', 'AAPL', 'GOOG', 'NVDA'],
+  Crypto: ['ETHA', 'BMNR', 'BITW', 'IBIT', 'MSTR', 'COIN', 'GBTC', 'BTC'],
+  Other: []
+};
+const sectorColors = ['#235c48', '#e8896b', '#4776d0', '#d19a28', '#56b98a', '#b86f4b', '#82b7c5', '#8a9e47', '#637b8a', '#b86b83'];
+const sectorBySymbol = new Map(Object.entries(sectorDefinitions).flatMap(([sector, symbols]) => symbols.map(symbol => [symbol, sector])));
 const numberFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 const moneyExact = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(value ?? 0);
 const valueOrNull = value => Number.isFinite(value) ? value : null;
@@ -62,6 +71,18 @@ function portfolioModel(rows) {
   }));
 }
 
+function positionValues(row) {
+  return Object.keys(row)
+    .filter(key => key.endsWith('_px'))
+    .reduce((values, key) => {
+      const symbol = key.slice(0, -3);
+      const shares = numeric(row[symbol]);
+      const price = numeric(row[key]);
+      if (shares !== null && shares !== 0 && price !== null) values[symbol] = shares * price;
+      return values;
+    }, {});
+}
+
 function accountModel(name, rows) {
   const ordered = orderedRows(rows).map(({ row, date }) => ({
     row,
@@ -103,7 +124,7 @@ function accountModel(name, rows) {
     currentValue,
     costBasis,
     returnPercent: currentValue !== null && costBasis > 0 ? (currentValue / costBasis - 1) * 100 : null,
-    history: ordered.map(point => ({ date: point.date, value: valueOrNull(point.value) })),
+    history: ordered.map(point => ({ date: point.date, value: valueOrNull(point.value), positionValues: positionValues(point.row) })),
     holdings
   };
 }
@@ -256,7 +277,7 @@ function aggregateHoldings(accounts, portfolioValue) {
 }
 
 function renderHoldingsTable(accounts, holdings) {
-  document.querySelector('#holdings-header').innerHTML = `<tr><th>Symbol</th>${accounts.map(account => `<th>${account.displayName}</th>`).join('')}<th>Cost basis</th><th>Current value</th><th><div class="gain-heading"><span>Gain / loss</span><div class="gain-toggle" role="group" aria-label="Gain or loss display"><button type="button" data-gain-mode="dollars" aria-pressed="${state.holdingsGainMode === 'dollars'}" title="Show gain or loss in dollars">$</button><button type="button" data-gain-mode="percent" aria-pressed="${state.holdingsGainMode === 'percent'}" title="Show gain or loss as a percentage">%</button></div></div></th><th>Portfolio %</th></tr>`;
+  document.querySelector('#holdings-header').innerHTML = `<tr><th>Symbol</th>${accounts.map(account => `<th>${account.displayName}</th>`).join('')}<th>Total shares</th><th>Cost basis</th><th>Current value</th><th><div class="gain-heading"><span>Gain / loss</span><div class="gain-toggle" role="group" aria-label="Gain or loss display"><button type="button" data-gain-mode="dollars" aria-pressed="${state.holdingsGainMode === 'dollars'}" title="Show gain or loss in dollars">$</button><button type="button" data-gain-mode="percent" aria-pressed="${state.holdingsGainMode === 'percent'}" title="Show gain or loss as a percentage">%</button></div></div></th><th>Portfolio %</th></tr>`;
   document.querySelector('#holdings-table').innerHTML = holdings.map((holding, index) => {
     const gainPercent = holding.gain !== null && holding.costBasis > 0 ? holding.gain / holding.costBasis * 100 : null;
     const gainText = state.holdingsGainMode === 'percent'
@@ -268,9 +289,102 @@ function renderHoldingsTable(accounts, holdings) {
     }).join('');
     const portfolioPercent = holding.portfolioPercent === null ? '' : `${holding.portfolioPercent.toFixed(1)}%`;
     const gainSortValue = state.holdingsGainMode === 'percent' ? gainPercent ?? '' : holding.gain ?? '';
-    return `<tr data-original-index="${index}"><td class="ticker">${holding.symbol}</td>${accountShareCells}<td>${holding.costBasis === null ? '' : moneyExact(holding.costBasis)}</td><td>${holding.marketValue === null ? '' : moneyExact(holding.marketValue)}</td><td data-sort-value="${gainSortValue}">${gainText}</td><td data-sort-value="${holding.portfolioPercent ?? ''}">${portfolioPercent}</td></tr>`;
+    return `<tr data-original-index="${index}"><td class="ticker">${holding.symbol}</td>${accountShareCells}<td data-sort-value="${holding.shares}">${numberFormat.format(holding.shares)}</td><td>${holding.costBasis === null ? '' : moneyExact(holding.costBasis)}</td><td>${holding.marketValue === null ? '' : moneyExact(holding.marketValue)}</td><td data-sort-value="${gainSortValue}">${gainText}</td><td data-sort-value="${holding.portfolioPercent ?? ''}">${portfolioPercent}</td></tr>`;
   }).join('');
   resetTableSort(document.querySelector('#holdings-table-view'));
+}
+
+function buildSectorData(portfolio, accounts, holdings) {
+  const portfolioValue = [...portfolio].reverse().find(point => point.value !== null)?.value ?? null;
+  const currentValues = Object.fromEntries(Object.keys(sectorDefinitions).map(sector => [sector, {}]));
+  holdings.forEach(holding => {
+    if (holding.marketValue === null) return;
+    const sector = sectorBySymbol.get(holding.symbol) ?? 'Other';
+    currentValues[sector][holding.symbol] = holding.marketValue;
+  });
+  const pricedHoldingsValue = holdings.reduce((total, holding) => total + (holding.marketValue ?? 0), 0);
+  if (portfolioValue !== null && portfolioValue > pricedHoldingsValue) {
+    currentValues.Other['Unallocated'] = portfolioValue - pricedHoldingsValue;
+  }
+
+  const sectors = Object.entries(sectorDefinitions).map(([name, symbols], index) => {
+    const symbolValues = currentValues[name];
+    const displaySymbols = name === 'Other'
+      ? Object.keys(symbolValues).sort((left, right) => (symbolValues[right] ?? 0) - (symbolValues[left] ?? 0))
+      : symbols;
+    const rows = displaySymbols.map(symbol => ({ symbol, value: symbolValues[symbol] ?? 0 }));
+    const marketValue = rows.reduce((total, row) => total + row.value, 0);
+    return { name, color: sectorColors[index], symbols: displaySymbols, rows, marketValue };
+  });
+
+  const historyIndexes = accounts.map(() => -1);
+  const history = portfolio.filter(point => point.value !== null).map(point => {
+    const values = Object.fromEntries(Object.keys(sectorDefinitions).map(sector => [sector, 0]));
+    let pricedValue = 0;
+    accounts.forEach((account, accountIndex) => {
+      const accountHistory = account.history;
+      while (historyIndexes[accountIndex] + 1 < accountHistory.length
+        && accountHistory[historyIndexes[accountIndex] + 1].date <= point.date) {
+        historyIndexes[accountIndex] += 1;
+      }
+      const accountPoint = accountHistory[historyIndexes[accountIndex]];
+      if (!accountPoint) return;
+      Object.entries(accountPoint.positionValues).forEach(([symbol, value]) => {
+        const sector = sectorBySymbol.get(symbol) ?? 'Other';
+        values[sector] += value;
+        pricedValue += value;
+      });
+    });
+    if (point.value > pricedValue) values.Other += point.value - pricedValue;
+    const total = Object.values(values).reduce((sum, value) => sum + value, 0);
+    return { date: point.date, total, values };
+  });
+
+  return { portfolioValue, sectors, history };
+}
+
+function renderSectorBreakdowns(sectors, portfolioValue) {
+  document.querySelector('#sector-detail-grid').innerHTML = sectors.map((sector, index) => `
+    <article class="panel sector-detail-panel">
+      <div class="panel-heading"><div><h3>${sector.name}</h3></div><strong class="sector-total">${moneyExact(sector.marketValue)}</strong></div>
+      <div class="sector-detail-body">
+        <div class="sector-symbol-chart-wrap"><canvas id="sector-symbol-chart-${index}" role="img" aria-label="${sector.name} symbol allocation"></canvas></div>
+        <div class="table-scroll"><table><thead><tr><th>Symbol</th><th>Total value</th><th>Sector %</th><th>Portfolio %</th></tr></thead><tbody>
+          ${sector.rows.map(row => {
+            const sectorPercent = sector.marketValue > 0 ? row.value / sector.marketValue * 100 : 0;
+            const portfolioPercent = portfolioValue > 0 ? row.value / portfolioValue * 100 : 0;
+            return `<tr><td class="ticker">${row.symbol}</td><td>${moneyExact(row.value)}</td><td>${sectorPercent.toFixed(1)}%</td><td>${portfolioPercent.toFixed(1)}%</td></tr>`;
+          }).join('')}
+        </tbody></table></div>
+      </div>
+    </article>`).join('');
+}
+
+function renderSectorCharts(sectorData) {
+  const { sectors, history, portfolioValue } = sectorData;
+  makeChart('sectorPortfolio', 'sector-portfolio-chart', 'doughnut', sectors.map(sector => sector.name), [
+    { data: sectors.map(sector => sector.marketValue), backgroundColor: sectors.map(sector => sector.color), borderWidth: 0, hoverOffset: 4 }
+  ], moneyExact, { cutout: '68%', plugins: { legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, padding: 12 } } } });
+
+  const historyLabels = history.map(point => point.date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }));
+  makeChart('sectorHistory', 'sector-history-chart', 'line', historyLabels, sectors.map(sector => lineDataset(
+    sector.name,
+    history.map(point => point.total > 0 ? point.values[sector.name] / point.total * 100 : 0),
+    sector.color,
+    { fill: 'stack', borderWidth: 1, pointRadius: 0, stack: 'sectors' }
+  )), value => `${Number(value).toFixed(1)}%`, {
+    interaction: { mode: 'index', intersect: false },
+    scales: {
+      x: { stacked: true, grid: { display: false }, ticks: { maxTicksLimit: 8, maxRotation: 0, color: '#748078' } },
+      y: { stacked: true, min: 0, max: 100, grid: { color: '#e4e9e4' }, ticks: { color: '#748078', callback: value => `${value}%` } }
+    },
+    elements: { line: { tension: 0 } }
+  });
+
+  sectors.forEach((sector, index) => makeChart(`sectorSymbols${index}`, `sector-symbol-chart-${index}`, 'doughnut',
+    sector.rows.map(row => row.symbol), [
+      { data: sector.rows.map(row => row.value), backgroundColor: sector.rows.map((_, symbolIndex) => sectorColors[(index + symbolIndex) % sectorColors.length]), borderWidth: 0, hoverOffset: 3 }
+    ], moneyExact, { cutout: '68%', plugins: { legend: { display: false } } }));
 }
 
 function resetTableSort(table) {
@@ -394,6 +508,8 @@ function renderPortfolio(data) {
   const holdings = aggregateHoldings(accounts, marketValue);
   renderHoldingsTable(accounts, holdings);
   state.data.holdings = holdings;
+  state.data.sectors = buildSectorData(portfolio, accounts, holdings);
+  renderSectorBreakdowns(state.data.sectors.sectors, state.data.sectors.portfolioValue);
   if (accounts.length) renderAccount(accounts[0]);
 }
 
@@ -445,6 +561,7 @@ function setView(view) {
     const account = state.data.accounts.find(item => item.id === document.querySelector('#account-select').value);
     renderAccountChart(account);
   }
+  if (view === 'sectors' && state.data) renderSectorCharts(state.data.sectors);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 

@@ -142,6 +142,19 @@ table[data-sortable-table] th:focus-visible { outline: 2px solid var(--blue); ou
 table[data-sortable-table] th[aria-sort="ascending"]::after { content: "  ↑"; }
 table[data-sortable-table] th[aria-sort="descending"]::after { content: "  ↓"; }
 
+.sector-overview-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 12px; margin-bottom: 14px; }
+.sector-overview-grid .chart-panel { min-width: 0; }
+.sector-portfolio-chart-wrap, .sector-history-chart-wrap { height: 360px; padding: 18px 20px 22px; }
+.sector-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.sector-detail-panel { min-width: 0; overflow: hidden; }
+.sector-detail-panel .panel-heading { align-items: center; padding-bottom: 10px; }
+.sector-total { color: var(--green); font-family: "DM Mono", monospace; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.sector-detail-body { display: grid; grid-template-columns: minmax(130px, .65fr) minmax(0, 1.35fr); align-items: center; gap: 8px; padding: 4px 12px 14px; }
+.sector-symbol-chart-wrap { position: relative; height: 190px; min-width: 0; }
+.sector-detail-panel th, .sector-detail-panel td { padding-right: 10px; padding-left: 10px; }
+.sector-detail-panel th { font-size: 8px; }
+.sector-detail-panel td { font-size: 11px; }
+
 @media (max-width: 850px) {
   .topbar { gap: 12px; }
   .topbar-meta { display: flex !important; }
@@ -152,12 +165,18 @@ table[data-sortable-table] th[aria-sort="descending"]::after { content: "  ↓";
   .account-drilldown-grid { grid-template-columns: 1fr; }
   .tabs { overflow: visible; }
   .account-performance-panel .chart-wrap-account { height: 260px; }
+  .sector-overview-grid { grid-template-columns: 1fr; }
+  .sector-detail-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 650px) {
   .overview-charts { grid-template-columns: 1fr; }
   .overview-charts .chart-wrap { height: 250px; }
   .chart-grid { grid-template-columns: 1fr; }
   .chart-grid .chart-wrap { height: 240px; }
+  .sector-portfolio-chart-wrap, .sector-history-chart-wrap { height: 300px; padding: 14px 12px 18px; }
+  .sector-detail-body { grid-template-columns: minmax(105px, .6fr) minmax(0, 1.4fr); gap: 2px; padding-right: 6px; padding-left: 6px; }
+  .sector-symbol-chart-wrap { height: 150px; }
+  .sector-detail-panel th, .sector-detail-panel td { padding-right: 6px; padding-left: 6px; font-size: 9px; }
   .page-title { font-size: 26px; }
 }
 @media (max-width: 500px) {
