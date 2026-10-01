@@ -36,10 +36,22 @@
       <button class="tab is-active" data-tab="overview" aria-selected="true" type="button"><span class="tab-number">01</span>Overview</button>
       <button class="tab" data-tab="holdings" aria-selected="false" type="button"><span class="tab-number">02</span>Holdings</button>
       <button class="tab" data-tab="accounts" aria-selected="false" type="button"><span class="tab-number">03</span>Account drilldown</button>
+      <div class="overview-toolbar" aria-label="Overview controls">
+        <label class="timeframe-control" for="overview-timeframe">
+          <span>Timeframe</span>
+          <select id="overview-timeframe">
+            <option>All</option>
+            <option>5yrs</option>
+            <option>1yr</option>
+            <option>YTD</option>
+            <option>6mo</option>
+          </select>
+        </label>
+        <span class="account-count" id="account-count"></span>
+      </div>
     </nav>
 
     <section class="tab-panel is-visible" id="overview-panel" data-panel="overview">
-      <div class="section-heading overview-count"><span class="account-count" id="account-count"></span></div>
       <div class="metric-grid">
         <article class="metric"><p class="metric-label">Portfolio Value</p><p class="metric-value" id="metric-market-value"></p></article>
         <article class="metric"><p class="metric-label">Net Contributions</p><p class="metric-value" id="metric-contributions"></p></article>
@@ -60,30 +72,30 @@
 
       <div class="chart-grid">
         <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">Relative performance</p><h3>Returns</h3></div></div><div class="chart-wrap"><canvas id="returns-chart" role="img" aria-label="Portfolio returns compared with the S and P 500"></canvas></div></article>
-        <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">Relative performance</p><h3>Cumulative alpha</h3></div></div><div class="chart-wrap"><canvas id="alpha-chart" role="img" aria-label="Cumulative portfolio alpha"></canvas></div></article>
         <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">Daily performance</p><h3>Daily alpha</h3></div></div><div class="chart-wrap"><canvas id="daily-alpha-chart" role="img" aria-label="Daily portfolio alpha"></canvas></div></article>
+        <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">Relative performance</p><h3>Cumulative alpha</h3></div></div><div class="chart-wrap"><canvas id="alpha-chart" role="img" aria-label="Cumulative portfolio alpha"></canvas></div></article>
         <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">Daily performance</p><h3>Daily returns</h3></div></div><div class="chart-wrap"><canvas id="daily-return-chart" role="img" aria-label="Daily cost-basis-adjusted portfolio return"></canvas></div></article>
       </div>
 
       <article class="panel table-panel summary-panel">
         <div class="panel-heading"><div><h3>Account summary</h3></div><span class="muted" id="summary-note"></span></div>
-        <div class="table-scroll"><table><thead><tr><th>Account</th><th>Type</th><th>Holdings</th><th>Current value</th><th>Return</th></tr></thead><tbody id="account-summary"></tbody></table></div>
+        <div class="table-scroll"><table id="account-summary-table" data-sortable-table><thead><tr><th>Account</th><th>Type</th><th>Holdings</th><th>Current value</th><th><div class="gain-heading"><span>Return</span><div class="gain-toggle" role="group" aria-label="Account return display"><button type="button" data-summary-return-mode="dollars" aria-pressed="false" title="Show return in dollars">$</button><button type="button" data-summary-return-mode="percent" aria-pressed="true" title="Show return as a percentage">%</button></div></div></th></tr></thead><tbody id="account-summary"></tbody></table></div>
       </article>
     </section>
 
     <section class="tab-panel" id="holdings-panel" data-panel="holdings">
       <div class="section-heading"><div><p class="eyebrow">Consolidated positions</p><h2>Holdings</h2></div></div>
-      <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>Position</th><th>Total shares</th><th>Cost basis</th><th>Current value</th><th>Gain / loss</th><th>Portfolio %</th></tr></thead><tbody id="holdings-table"></tbody></table></div></article>
+      <article class="panel table-panel"><div class="table-scroll"><table id="holdings-table-view" data-sortable-table><thead id="holdings-header"></thead><tbody id="holdings-table"></tbody></table></div></article>
     </section>
 
     <section class="tab-panel" id="accounts-panel" data-panel="accounts">
       <div class="section-heading account-picker"><div><p class="eyebrow">Choose an account</p></div><select id="account-select" aria-label="Select an account"></select></div>
       <div class="account-hero">
         <div><p class="eyebrow" id="account-brokerage-type"></p><h2 class="account-name" id="account-name"></h2><p class="account-type" id="account-holding-count"></p></div>
-        <div class="hero-value"><strong id="account-value"></strong><span id="account-return"></span></div>
+        <div class="hero-value"><strong id="account-value"></strong><div class="account-stats"><div class="account-stat"><span>contributions</span><strong id="account-contributions"></strong></div><div class="account-stat"><span>gain</span><strong id="account-gain"></strong></div><div class="account-stat"><span>return</span><strong id="account-return"></strong></div></div></div>
       </div>
       <div class="account-drilldown-grid">
-        <article class="panel table-panel account-holdings-panel"><div class="panel-heading account-detail-heading"><h3>Current Positions</h3><p class="muted" id="account-date"></p></div><div class="table-scroll"><table><thead><tr><th>Position</th><th>Shares</th><th>Cost basis</th><th>Market value</th><th>Gain / loss</th></tr></thead><tbody id="account-holdings"></tbody></table></div></article>
+        <article class="panel table-panel account-holdings-panel"><div class="panel-heading account-detail-heading"><h3>Current Positions</h3><p class="muted" id="account-date"></p></div><div class="table-scroll"><table id="current-positions-table" data-sortable-table><thead><tr><th>Position</th><th>Shares</th><th>Cost basis</th><th>Market value</th><th><div class="gain-heading"><span>Gain / loss</span><div class="gain-toggle" role="group" aria-label="Gain or loss display"><button type="button" data-account-gain-mode="dollars" aria-pressed="true" title="Show gain or loss in dollars">$</button><button type="button" data-account-gain-mode="percent" aria-pressed="false" title="Show gain or loss as a percentage">%</button></div></div></th></tr></thead><tbody id="account-holdings"></tbody></table></div></article>
         <article class="panel account-performance-panel"><div class="panel-heading account-detail-heading"><h3>Account Performance</h3></div><div class="big-return" id="account-performance-return"></div><div class="chart-wrap chart-wrap-account"><canvas id="account-value-chart" role="img" aria-label="Selected account value over time"></canvas></div></article>
       </div>
     </section>

@@ -104,12 +104,17 @@ footer { display: flex; justify-content: space-between; padding: 23px clamp(24px
 .account-picker { align-items: center; margin-bottom: 24px; }
 .account-picker .eyebrow { margin: 0; }
 .account-picker select { min-width: 260px; }
-.account-hero { min-height: 190px; margin-bottom: 14px; }
+.account-hero { min-height: 190px; margin-bottom: 14px; align-items: flex-start; }
 .account-hero .account-name { margin: 0 0 8px; color: var(--white); font-size: 38px; font-weight: 500; letter-spacing: 0; }
 .account-hero #account-brokerage-type { color: var(--lime); }
 .account-hero #account-holding-count { color: #bfd4c8; }
 .account-hero #account-return { color: var(--lime); font-family: "DM Mono", monospace; font-size: 12px; }
-.account-drilldown-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(290px, .9fr); gap: 14px; align-items: stretch; }
+.account-stats { display: grid; gap: 4px; min-width: 210px; padding-top: 6px; }
+.account-stat { display: grid; grid-template-columns: 1fr auto; align-items: baseline; column-gap: 18px; }
+.account-stat span, .account-stat strong { color: var(--lime); font-family: "DM Mono", monospace; font-size: 12px; }
+.account-stat span { text-align: left; }
+.account-stat strong { font-weight: 500; text-align: right; white-space: nowrap; }
+.account-drilldown-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: stretch; }
 .account-drilldown-grid .account-holdings-panel { min-width: 0; margin-top: 0; }
 .account-performance-panel { min-width: 0; padding: 24px; }
 .account-performance-panel .big-return { margin: 18px 0 12px; }
@@ -121,6 +126,22 @@ footer { display: flex; justify-content: space-between; padding: 23px clamp(24px
 .account-detail-heading #account-date { margin: 0; font-size: 12px; text-align: right; }
 .account-performance-panel .big-return { margin-top: 4px; }
 
+.tabs { align-items: center; flex-wrap: wrap; overflow: visible; row-gap: 8px; }
+.overview-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 0 0 0 auto; }
+.timeframe-control { display: flex; align-items: center; gap: 8px; color: var(--muted); font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; }
+.timeframe-control select { min-width: 112px; padding: 8px 28px 8px 10px; }
+.overview-toolbar .account-count { color: var(--muted); font-family: "DM Mono", monospace; font-size: 10px; }
+.gain-heading { display: grid; justify-items: start; gap: 6px; }
+.gain-toggle { display: inline-flex; overflow: hidden; border: 1px solid var(--line); border-radius: 3px; }
+.gain-toggle button { min-width: 28px; padding: 3px 6px; color: var(--muted); border: 0; border-right: 1px solid var(--line); background: var(--white); font: 11px "DM Mono", monospace; cursor: pointer; }
+.gain-toggle button:last-child { border-right: 0; }
+.gain-toggle button[aria-pressed="true"] { color: var(--white); background: var(--green); }
+.gain-toggle button:focus-visible, .timeframe-control select:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+table[data-sortable-table] th { cursor: pointer; }
+table[data-sortable-table] th:focus-visible { outline: 2px solid var(--blue); outline-offset: -3px; }
+table[data-sortable-table] th[aria-sort="ascending"]::after { content: "  ↑"; }
+table[data-sortable-table] th[aria-sort="descending"]::after { content: "  ↓"; }
+
 @media (max-width: 850px) {
   .topbar { gap: 12px; }
   .topbar-meta { display: flex !important; }
@@ -129,6 +150,7 @@ footer { display: flex; justify-content: space-between; padding: 23px clamp(24px
   .metric { padding: 16px; }
   .metric-value { font-size: 22px; }
   .account-drilldown-grid { grid-template-columns: 1fr; }
+  .tabs { overflow: visible; }
   .account-performance-panel .chart-wrap-account { height: 260px; }
 }
 @media (max-width: 650px) {
@@ -151,4 +173,7 @@ footer { display: flex; justify-content: space-between; padding: 23px clamp(24px
   .account-picker select { min-width: 0; }
   .account-hero .account-name { font-size: 30px; }
   .account-hero .hero-value strong { font-size: 32px; }
+  .overview-toolbar { justify-content: flex-start; margin-left: 0; }
+  .timeframe-control { flex: 1; justify-content: space-between; }
+  .timeframe-control select { min-width: 0; }
 }

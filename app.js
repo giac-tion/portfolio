@@ -228,12 +228,14 @@ function aggregateHoldings(accounts, portfolioValue) {
     const item = holdingsBySymbol.get(holding.symbol) ?? {
       symbol: holding.symbol,
       shares: 0,
+      accountShares: {},
       costBasis: 0,
       marketValue: 0,
       costBasisComplete: true,
       marketValueComplete: true
     };
     item.shares += holding.shares;
+    item.accountShares[account.id] = holding.shares;
     if (holding.averageCost === null) item.costBasisComplete = false;
     else item.costBasis += holding.shares * holding.averageCost;
     if (holding.marketValue === null) item.marketValueComplete = false;
@@ -251,6 +253,77 @@ function aggregateHoldings(accounts, portfolioValue) {
       portfolioPercent: marketValue !== null && portfolioValue > 0 ? marketValue / portfolioValue * 100 : null
     };
   }).sort((left, right) => (right.marketValue ?? -Infinity) - (left.marketValue ?? -Infinity));
+}
+
+function renderHoldingsTable(accounts, holdings) {
+  document.querySelector('#holdings-header').innerHTML = `<tr><th>Symbol</th>${accounts.map(account => `<th>${account.displayName}</th>`).join('')}<th>Cost basis</th><th>Current value</th><th><div class="gain-heading"><span>Gain / loss</span><div class="gain-toggle" role="group" aria-label="Gain or loss display"><button type="button" data-gain-mode="dollars" aria-pressed="${state.holdingsGainMode === 'dollars'}" title="Show gain or loss in dollars">$</button><button type="button" data-gain-mode="percent" aria-pressed="${state.holdingsGainMode === 'percent'}" title="Show gain or loss as a percentage">%</button></div></div></th><th>Portfolio %</th></tr>`;
+  document.querySelector('#holdings-table').innerHTML = holdings.map((holding, index) => {
+    const gainPercent = holding.gain !== null && holding.costBasis > 0 ? holding.gain / holding.costBasis * 100 : null;
+    const gainText = state.holdingsGainMode === 'percent'
+      ? (gainPercent === null ? '' : `${gainPercent > 0 ? '+' : ''}${gainPercent.toFixed(1)}%`)
+      : (holding.gain === null ? '' : moneyExact(holding.gain));
+    const accountShareCells = accounts.map(account => {
+      const shares = holding.accountShares[account.id] ?? 0;
+      return `<td>${shares ? numberFormat.format(shares) : '-'}</td>`;
+    }).join('');
+    const portfolioPercent = holding.portfolioPercent === null ? '' : `${holding.portfolioPercent.toFixed(1)}%`;
+    const gainSortValue = state.holdingsGainMode === 'percent' ? gainPercent ?? '' : holding.gain ?? '';
+    return `<tr data-original-index="${index}"><td class="ticker">${holding.symbol}</td>${accountShareCells}<td>${holding.costBasis === null ? '' : moneyExact(holding.costBasis)}</td><td>${holding.marketValue === null ? '' : moneyExact(holding.marketValue)}</td><td data-sort-value="${gainSortValue}">${gainText}</td><td data-sort-value="${holding.portfolioPercent ?? ''}">${portfolioPercent}</td></tr>`;
+  }).join('');
+  resetTableSort(document.querySelector('#holdings-table-view'));
+}
+
+function resetTableSort(table) {
+  if (!table) return;
+  delete table.dataset.sortColumn;
+  delete table.dataset.sortDirection;
+  table.querySelectorAll('thead th').forEach(header => {
+    header.tabIndex = 0;
+    header.setAttribute('aria-sort', 'none');
+  });
+  const body = table.tBodies[0];
+  if (body) [...body.rows].sort((left, right) => Number(left.dataset.originalIndex) - Number(right.dataset.originalIndex)).forEach(row => body.append(row));
+}
+
+function applyTableSort(table, column, direction) {
+  const body = table.tBodies[0];
+  if (!body) return;
+  const rows = [...body.rows];
+  rows.forEach((row, index) => {
+    if (row.dataset.originalIndex === undefined) row.dataset.originalIndex = String(index);
+  });
+  const multiplier = direction === 'ascending' ? 1 : -1;
+  const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+  rows.sort((left, right) => {
+    const leftCell = left.cells[column];
+    const rightCell = right.cells[column];
+    const leftValue = leftCell?.dataset.sortValue ?? leftCell?.textContent.trim() ?? '';
+    const rightValue = rightCell?.dataset.sortValue ?? rightCell?.textContent.trim() ?? '';
+    const leftNumber = leftValue && leftValue !== '-' ? Number(leftValue.replace(/[$,%\s,]/g, '')) : NaN;
+    const rightNumber = rightValue && rightValue !== '-' ? Number(rightValue.replace(/[$,%\s,]/g, '')) : NaN;
+    const leftEmpty = !leftValue || leftValue === '-';
+    const rightEmpty = !rightValue || rightValue === '-';
+    if (leftEmpty || rightEmpty) return leftEmpty === rightEmpty ? 0 : leftEmpty ? 1 : -1;
+    const comparison = Number.isFinite(leftNumber) && Number.isFinite(rightNumber)
+      ? leftNumber - rightNumber
+      : collator.compare(leftValue, rightValue);
+    return comparison ? comparison * multiplier : Number(left.dataset.originalIndex) - Number(right.dataset.originalIndex);
+  });
+  rows.forEach(row => body.append(row));
+}
+
+function sortTableByHeader(table, header) {
+  const column = header.cellIndex;
+  const currentColumn = Number(table.dataset.sortColumn);
+  if (currentColumn === column && table.dataset.sortDirection === 'ascending') {
+    resetTableSort(table);
+    return;
+  }
+  const direction = currentColumn !== column || table.dataset.sortDirection !== 'descending' ? 'descending' : 'ascending';
+  table.dataset.sortColumn = String(column);
+  table.dataset.sortDirection = direction;
+  table.querySelectorAll('thead th').forEach(item => item.setAttribute('aria-sort', item === header ? direction : 'none'));
+  applyTableSort(table, column, direction);
 }
 
 function renderPortfolio(data) {
@@ -309,9 +382,17 @@ function renderPortfolio(data) {
 
   const accountSelect = document.querySelector('#account-select');
   accountSelect.innerHTML = accounts.map(account => `<option value="${account.id}">${account.displayName}</option>`).join('');
-  document.querySelector('#account-summary').innerHTML = accounts.map(account => `<tr data-account-id="${account.id}" tabindex="0" aria-label="Open ${account.displayName} account details"><td>${account.displayName}</td><td>${account.accountType || '-'}</td><td>${account.holdings.length ? `${account.holdings.length} positions` : ''}</td><td>${moneyText(account.currentValue)}</td><td>${percentText(account.returnPercent)}</td></tr>`).join('');
+  document.querySelector('#account-summary').innerHTML = accounts.map((account, index) => {
+    const accountGain = account.currentValue !== null && account.costBasis !== null ? account.currentValue - account.costBasis : null;
+    const returnValue = state.accountSummaryReturnMode === 'dollars' ? accountGain : account.returnPercent;
+    const returnText = state.accountSummaryReturnMode === 'dollars'
+      ? (accountGain === null ? '' : moneyExact(accountGain))
+      : percentText(account.returnPercent);
+    return `<tr data-original-index="${index}" data-account-id="${account.id}" tabindex="0" aria-label="Open ${account.displayName} account details"><td>${account.displayName}</td><td>${account.accountType || '-'}</td><td data-sort-value="${account.holdings.length}">${account.holdings.length ? `${account.holdings.length} positions` : ''}</td><td>${moneyText(account.currentValue)}</td><td data-summary-return-dollars="${accountGain ?? ''}" data-summary-return-percent="${account.returnPercent ?? ''}" data-sort-value="${returnValue ?? ''}">${returnText}</td></tr>`;
+  }).join('');
+  resetTableSort(document.querySelector('#account-summary-table'));
   const holdings = aggregateHoldings(accounts, marketValue);
-  document.querySelector('#holdings-table').innerHTML = holdings.map(holding => `<tr><td class="ticker">${holding.symbol}</td><td>${numberFormat.format(holding.shares)}</td><td>${moneyText(holding.costBasis)}</td><td>${moneyText(holding.marketValue)}</td><td>${moneyText(holding.gain)}</td><td>${percentText(holding.portfolioPercent)}</td></tr>`).join('');
+  renderHoldingsTable(accounts, holdings);
   state.data.holdings = holdings;
   if (accounts.length) renderAccount(accounts[0]);
 }
@@ -324,14 +405,25 @@ function renderAccount(account) {
     ? `Updated ${account.latestDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
     : '';
   document.querySelector('#account-value').textContent = account.currentValue === null ? '' : moneyExact(account.currentValue);
+  document.querySelector('#account-contributions').textContent = account.costBasis === null ? '' : moneyExact(account.costBasis);
+  const accountGain = account.currentValue !== null && account.costBasis !== null ? account.currentValue - account.costBasis : null;
+  document.querySelector('#account-gain').textContent = accountGain === null ? '' : moneyExact(accountGain);
   const totalShares = account.holdings.reduce((total, holding) => total + holding.shares, 0);
   document.querySelector('#account-holding-count').textContent = account.holdings.length
     ? `${account.holdings.length} positions · ${numberFormat.format(totalShares)} total shares`
     : '';
   const formattedReturn = account.returnPercent === null ? '' : `${account.returnPercent > 0 ? '+' : ''}${account.returnPercent.toFixed(1)}%`;
-  document.querySelector('#account-return').textContent = formattedReturn ? `${formattedReturn} return` : '';
+  document.querySelector('#account-return').textContent = formattedReturn;
   document.querySelector('#account-performance-return').textContent = formattedReturn;
-  document.querySelector('#account-holdings').innerHTML = account.holdings.map(holding => `<tr><td class="ticker">${holding.symbol}</td><td>${numberFormat.format(holding.shares)}</td><td>${holding.averageCost === null ? '' : moneyExact(holding.shares * holding.averageCost)}</td><td>${holding.marketValue === null ? '' : moneyExact(holding.marketValue)}</td><td>${holding.gain === null ? '' : moneyExact(holding.gain)}</td></tr>`).join('');
+  document.querySelector('#account-holdings').innerHTML = account.holdings.map((holding, index) => {
+    const holdingCostBasis = holding.averageCost === null ? null : holding.shares * holding.averageCost;
+    const holdingReturn = holding.gain !== null && holdingCostBasis > 0 ? holding.gain / holdingCostBasis * 100 : null;
+    const holdingReturnText = holdingReturn === null ? '' : `${holdingReturn > 0 ? '+' : ''}${holdingReturn.toFixed(1)}%`;
+    const gainText = state.accountHoldingsGainMode === 'percent' ? holdingReturnText : holding.gain === null ? '' : moneyExact(holding.gain);
+    const gainSortValue = state.accountHoldingsGainMode === 'percent' ? holdingReturn ?? '' : holding.gain ?? '';
+    return `<tr data-original-index="${index}"><td class="ticker">${holding.symbol}</td><td>${numberFormat.format(holding.shares)}</td><td>${holdingCostBasis === null ? '' : moneyExact(holdingCostBasis)}</td><td>${holding.marketValue === null ? '' : moneyExact(holding.marketValue)}</td><td data-gain-dollars="${holding.gain ?? ''}" data-gain-percent="${holdingReturn ?? ''}" data-sort-value="${gainSortValue}">${gainText}</td></tr>`;
+  }).join('');
+  resetTableSort(document.querySelector('#current-positions-table'));
   if (document.querySelector('#accounts-panel').classList.contains('is-visible')) renderAccountChart(account);
 }
 
@@ -356,7 +448,7 @@ function setView(view) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-const state = { data: null };
+const state = { data: null, holdingsGainMode: 'dollars', accountHoldingsGainMode: 'dollars', accountSummaryReturnMode: 'percent' };
 const dashboard = document.querySelector('#dashboard');
 const authGate = document.querySelector('#auth-gate');
 const signIn = async () => {
@@ -378,6 +470,68 @@ document.querySelector('#sign-out-button').addEventListener('click', () => {
   signOut(auth).catch(error => setNotice(`Sign-out failed (${error.code ?? 'unknown'}): ${error.message}`));
 });
 document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => setView(tab.dataset.tab)));
+document.querySelectorAll('[data-sortable-table]').forEach(table => {
+  table.querySelectorAll('thead th').forEach(header => {
+    header.tabIndex = 0;
+    header.setAttribute('aria-sort', 'none');
+  });
+  table.addEventListener('click', event => {
+    const header = event.target.closest('th');
+    if (!header || !table.contains(header) || event.target.closest('button')) return;
+    sortTableByHeader(table, header);
+  });
+  table.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const header = event.target.closest('th');
+    if (!header || !table.contains(header) || event.target.closest('button')) return;
+    event.preventDefault();
+    sortTableByHeader(table, header);
+  });
+});
+document.querySelector('#holdings-header').addEventListener('click', event => {
+  const button = event.target.closest('[data-gain-mode]');
+  if (!button || !state.data) return;
+  state.holdingsGainMode = button.dataset.gainMode;
+  renderHoldingsTable(state.data.accounts, state.data.holdings);
+});
+document.querySelector('#current-positions-table').addEventListener('click', event => {
+  const button = event.target.closest('[data-account-gain-mode]');
+  if (!button) return;
+  state.accountHoldingsGainMode = button.dataset.accountGainMode;
+  document.querySelectorAll('[data-account-gain-mode]').forEach(toggle => {
+    toggle.setAttribute('aria-pressed', String(toggle.dataset.accountGainMode === state.accountHoldingsGainMode));
+  });
+  document.querySelectorAll('#account-holdings [data-gain-dollars]').forEach(cell => {
+    const value = state.accountHoldingsGainMode === 'percent' ? cell.dataset.gainPercent : cell.dataset.gainDollars;
+    const number = numeric(value);
+    cell.dataset.sortValue = value;
+    cell.textContent = number === null ? '' : state.accountHoldingsGainMode === 'percent'
+      ? `${number > 0 ? '+' : ''}${number.toFixed(1)}%`
+      : moneyExact(number);
+  });
+  const table = document.querySelector('#current-positions-table');
+  const sortedColumn = Number(table.dataset.sortColumn);
+  if (sortedColumn === 4) applyTableSort(table, sortedColumn, table.dataset.sortDirection);
+});
+document.querySelector('#account-summary-table').addEventListener('click', event => {
+  const button = event.target.closest('[data-summary-return-mode]');
+  if (!button) return;
+  state.accountSummaryReturnMode = button.dataset.summaryReturnMode;
+  document.querySelectorAll('[data-summary-return-mode]').forEach(toggle => {
+    toggle.setAttribute('aria-pressed', String(toggle.dataset.summaryReturnMode === state.accountSummaryReturnMode));
+  });
+  document.querySelectorAll('#account-summary [data-summary-return-dollars]').forEach(cell => {
+    const value = state.accountSummaryReturnMode === 'dollars' ? cell.dataset.summaryReturnDollars : cell.dataset.summaryReturnPercent;
+    const number = numeric(value);
+    cell.dataset.sortValue = value;
+    cell.textContent = number === null ? '' : state.accountSummaryReturnMode === 'dollars'
+      ? moneyExact(number)
+      : `${number > 0 ? '+' : ''}${number.toFixed(1)}%`;
+  });
+  const table = document.querySelector('#account-summary-table');
+  const sortedColumn = Number(table.dataset.sortColumn);
+  if (sortedColumn === 4) applyTableSort(table, sortedColumn, table.dataset.sortDirection);
+});
 document.querySelector('#account-summary').addEventListener('click', event => {
   const row = event.target.closest('tr[data-account-id]');
   const account = state.data?.accounts.find(item => item.id === row?.dataset.accountId);
