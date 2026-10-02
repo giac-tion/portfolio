@@ -18,15 +18,7 @@ const provider = new GoogleAuthProvider();
 const chartInstances = {};
 const accountNames = Array.from({ length: 10 }, (_, index) => `account_${index + 1}`);
 const accountColors = ['#235c48', '#56b98a', '#e8896b', '#82b7c5', '#f5c85d', '#4776d0', '#b86f4b', '#609b79', '#8a9e47', '#637b8a'];
-const sectorDefinitions = {
-  // Paste the sector definitions from AppScript Here, EXAMPLE SECTORS/SYMBOLS:
-  SPY: ['SPY', 'QQQ', 'QQQM', 'VOO', 'VTI', 'VGT', 'VUG', 'VOOG'],
-  'Big Tech': ['MSFT', 'AMZN', 'META', 'GOOGL', 'AVGO', 'AAPL', 'GOOG', 'NVDA'],
-  Crypto: ['ETHA', 'BMNR', 'BITW', 'IBIT', 'MSTR', 'COIN', 'GBTC', 'BTC'],
-  Other: []
-};
 const sectorColors = ['#235c48', '#e8896b', '#4776d0', '#d19a28', '#56b98a', '#b86f4b', '#82b7c5', '#8a9e47', '#637b8a', '#b86b83'];
-const sectorBySymbol = new Map(Object.entries(sectorDefinitions).flatMap(([sector, symbols]) => symbols.map(symbol => [symbol, sector])));
 const numberFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 const moneyExact = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(value ?? 0);
 const valueOrNull = value => Number.isFinite(value) ? value : null;
@@ -139,8 +131,27 @@ async function readDataset(uid, name) {
   };
 }
 
+function normalizeSectorDefinitions(rows = []) {
+  const definitions = {};
+  rows.forEach(row => {
+    if (!row || typeof row !== 'object') return;
+    const sector = row.sector ?? row.name;
+    if (typeof sector === 'string' && Array.isArray(row.symbols)) {
+      definitions[sector] = row.symbols.filter(symbol => typeof symbol === 'string' && symbol.trim()).map(symbol => symbol.trim());
+      return;
+    }
+    Object.entries(row).forEach(([name, symbols]) => {
+      if (Array.isArray(symbols)) {
+        definitions[name] = symbols.filter(symbol => typeof symbol === 'string' && symbol.trim()).map(symbol => symbol.trim());
+      }
+    });
+  });
+  if (!Array.isArray(definitions.Other)) definitions.Other = [];
+  return definitions;
+}
+
 async function loadData(uid) {
-  const names = [...accountNames, 'portfolio_total', 'account_metadata'];
+  const names = [...accountNames, 'portfolio_total', 'account_metadata', 'sector_definitions'];
   const datasets = Object.fromEntries(await Promise.all(names.map(async name => [name, await readDataset(uid, name)])));
   const metadataById = Object.fromEntries((datasets.account_metadata?.rows ?? []).map(row => [row.id ?? row.accountId, row]));
   const accounts = accountNames
@@ -158,6 +169,7 @@ async function loadData(uid) {
   return {
     portfolio: portfolioModel(datasets.portfolio_total?.rows),
     accounts,
+    sectorDefinitions: normalizeSectorDefinitions(datasets.sector_definitions?.rows),
     updatedAt: Object.values(datasets).map(dataset => dataset?.updatedAt).filter(Boolean).sort((a, b) => b - a)[0] ?? null
   };
 }
@@ -294,7 +306,8 @@ function renderHoldingsTable(accounts, holdings) {
   resetTableSort(document.querySelector('#holdings-table-view'));
 }
 
-function buildSectorData(portfolio, accounts, holdings) {
+function buildSectorData(portfolio, accounts, holdings, sectorDefinitions) {
+  const sectorBySymbol = new Map(Object.entries(sectorDefinitions).flatMap(([sector, symbols]) => symbols.map(symbol => [symbol, sector])));
   const portfolioValue = [...portfolio].reverse().find(point => point.value !== null)?.value ?? null;
   const currentValues = Object.fromEntries(Object.keys(sectorDefinitions).map(sector => [sector, {}]));
   holdings.forEach(holding => {
@@ -441,7 +454,7 @@ function sortTableByHeader(table, header) {
 }
 
 function renderPortfolio(data) {
-  const { portfolio, accounts } = data;
+  const { portfolio, accounts, sectorDefinitions } = data;
   const aggregateRows = portfolio.filter(point => point.value !== null);
   const latestPortfolio = aggregateRows[aggregateRows.length - 1];
   const marketValue = latestPortfolio?.value ?? null;
@@ -508,7 +521,7 @@ function renderPortfolio(data) {
   const holdings = aggregateHoldings(accounts, marketValue);
   renderHoldingsTable(accounts, holdings);
   state.data.holdings = holdings;
-  state.data.sectors = buildSectorData(portfolio, accounts, holdings);
+  state.data.sectors = buildSectorData(portfolio, accounts, holdings, sectorDefinitions);
   renderSectorBreakdowns(state.data.sectors.sectors, state.data.sectors.portfolioValue);
   if (accounts.length) renderAccount(accounts[0]);
 }
