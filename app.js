@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
-import { doc, getDoc, getFirestore } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
+import { collection, doc, getDoc, getDocs, getFirestore } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyCjrpdzRYFcnvGMoFg8PHY3EppYS7eTYCc',
@@ -16,7 +16,6 @@ const auth = getAuth(firebaseApp);
 const database = getFirestore(firebaseApp);
 const provider = new GoogleAuthProvider();
 const chartInstances = {};
-const accountNames = Array.from({ length: 10 }, (_, index) => `account_${index + 1}`);
 const accountColors = ['#235c48', '#56b98a', '#e8896b', '#82b7c5', '#f5c85d', '#4776d0', '#b86f4b', '#609b79', '#8a9e47', '#637b8a'];
 const sectorColors = ['#235c48', '#e8896b', '#4776d0', '#d19a28', '#56b98a', '#b86f4b', '#82b7c5', '#8a9e47', '#637b8a', '#b86b83'];
 const numberFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
@@ -63,16 +62,37 @@ function portfolioModel(rows) {
   }));
 }
 
-function positionValues(row) {
-  return Object.keys(row)
-    .filter(key => key.endsWith('_px'))
-    .reduce((values, key) => {
+function accountPositions(row) {
+  return Object.entries(row).flatMap(([key, value]) => {
+    if (key.endsWith('_px')) {
       const symbol = key.slice(0, -3);
-      const shares = numeric(row[symbol]);
-      const price = numeric(row[key]);
-      if (shares !== null && shares !== 0 && price !== null) values[symbol] = shares * price;
-      return values;
-    }, {});
+      return [{
+        symbol,
+        shares: numeric(row[symbol]),
+        price: numeric(value),
+        averageCost: numeric(row[`${symbol}_cb`])
+      }];
+    }
+    if (value && typeof value === 'object' && !Array.isArray(value)
+      && ('shares' in value || 'px' in value || 'avg_cb' in value)) {
+      return [{
+        symbol: key,
+        shares: numeric(value.shares),
+        price: numeric(value.px),
+        averageCost: numeric(value.avg_cb)
+      }];
+    }
+    return [];
+  });
+}
+
+function positionValues(row) {
+  return accountPositions(row).reduce((values, holding) => {
+    if (holding.shares !== null && holding.shares !== 0 && holding.price !== null) {
+      values[holding.symbol] = holding.shares * holding.price;
+    }
+    return values;
+  }, {});
 }
 
 function accountModel(name, rows) {
@@ -82,22 +102,15 @@ function accountModel(name, rows) {
     value: numeric(row.daily_acct_total)
   }));
   const latest = ordered[ordered.length - 1] ?? { row: {}, date: null, value: null };
-  const holdings = Object.keys(latest.row)
-    .filter(key => key.endsWith('_px'))
-    .map(key => {
-      const symbol = key.slice(0, -3);
-      const shares = numeric(latest.row[symbol]);
-      const price = numeric(latest.row[key]);
-      const averageCost = numeric(latest.row[`${symbol}_cb`]);
-      return {
-        symbol,
-        shares,
-        averageCost,
-        price,
-        marketValue: shares !== null && price !== null ? shares * price : null,
-        gain: shares !== null && price !== null && averageCost !== null ? shares * (price - averageCost) : null
-      };
-    })
+  const holdings = accountPositions(latest.row)
+    .map(({ symbol, shares, price, averageCost }) => ({
+      symbol,
+      shares,
+      averageCost,
+      price,
+      marketValue: shares !== null && price !== null ? shares * price : null,
+      gain: shares !== null && price !== null && averageCost !== null ? shares * (price - averageCost) : null
+    }))
     .filter(holding => holding.shares !== null && holding.shares !== 0)
     .sort((left, right) => right.marketValue - left.marketValue);
   const currentValue = latest.value ?? (holdings.length && holdings.every(item => item.marketValue !== null)
@@ -122,11 +135,20 @@ function accountModel(name, rows) {
 }
 
 async function readDataset(uid, name) {
-  const snapshot = await getDoc(doc(database, 'users', uid, 'datasets', name));
+  const reference = doc(database, 'users', uid, 'datasets', name);
+  const snapshot = await getDoc(reference);
   if (!snapshot.exists()) return null;
   const dataset = snapshot.data();
+  let rows = Array.isArray(dataset.rows) ? dataset.rows : [];
+  if (dataset.chunked) {
+    const chunkSnapshots = await getDocs(collection(reference, 'chunks'));
+    rows = chunkSnapshots.docs
+      .map(chunk => chunk.data())
+      .sort((left, right) => left.chunkIndex - right.chunkIndex)
+      .flatMap(chunk => Array.isArray(chunk.rows) ? chunk.rows : []);
+  }
   return {
-    rows: Array.isArray(dataset.rows) ? dataset.rows : [],
+    rows,
     updatedAt: dataset.updatedAt?.toDate?.() ?? snapshot.updateTime?.toDate?.() ?? null
   };
 }
@@ -151,13 +173,19 @@ function normalizeSectorDefinitions(rows = []) {
 }
 
 async function loadData(uid) {
-  const names = [...accountNames, 'portfolio_total', 'account_metadata', 'sector_definitions'];
-  const datasets = Object.fromEntries(await Promise.all(names.map(async name => [name, await readDataset(uid, name)])));
-  const metadataById = Object.fromEntries((datasets.account_metadata?.rows ?? []).map(row => [row.id ?? row.accountId, row]));
-  const accounts = accountNames
-    .filter(name => datasets[name])
-    .map(name => {
-      const account = accountModel(name, datasets[name].rows);
+  const [portfolioTotal, accountMetadata, sectorDefinitions] = await Promise.all(
+    ['portfolio_total', 'account_metadata', 'sector_definitions'].map(name => readDataset(uid, name))
+  );
+  const metadataRows = accountMetadata?.rows ?? [];
+  const metadataById = Object.fromEntries(metadataRows.map(row => [row.id ?? row.accountId, row]));
+  const accountNames = Object.keys(metadataById).filter(Boolean);
+  const accountDatasets = await Promise.all(
+    accountNames.map(async name => [name, await readDataset(uid, name)])
+  );
+  const accounts = accountDatasets
+    .filter(([, dataset]) => dataset)
+    .map(([name, dataset]) => {
+      const account = accountModel(name, dataset.rows);
       const metadata = metadataById[name] ?? {};
       return {
         ...account,
@@ -166,11 +194,12 @@ async function loadData(uid) {
         accountType: metadata.accountType ?? metadata.type ?? ''
       };
     });
+  const allDatasets = [portfolioTotal, accountMetadata, sectorDefinitions, ...accountDatasets.map(([, dataset]) => dataset)];
   return {
-    portfolio: portfolioModel(datasets.portfolio_total?.rows),
+    portfolio: portfolioModel(portfolioTotal?.rows),
     accounts,
-    sectorDefinitions: normalizeSectorDefinitions(datasets.sector_definitions?.rows),
-    updatedAt: Object.values(datasets).map(dataset => dataset?.updatedAt).filter(Boolean).sort((a, b) => b - a)[0] ?? null
+    sectorDefinitions: normalizeSectorDefinitions(sectorDefinitions?.rows),
+    updatedAt: allDatasets.map(dataset => dataset?.updatedAt).filter(Boolean).sort((a, b) => b - a)[0] ?? null
   };
 }
 
