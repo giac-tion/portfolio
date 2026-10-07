@@ -518,7 +518,7 @@ function renderSectorCharts(sectorData) {
     interaction: { mode: 'index', intersect: false },
     scales: {
       x: { stacked: true, grid: { display: false }, ticks: { maxTicksLimit: 8, maxRotation: 0, color: '#748078' } },
-      y: { stacked: true, min: 0, max: 100, grid: { color: '#e4e9e4' }, ticks: { color: '#748078', callback: value => `${value}%` } }
+      y: { stacked: true, min: 0, grid: { color: '#e4e9e4' }, ticks: { color: '#748078', callback: value => `${value}%` } }
     },
     elements: { line: { tension: 0 } }
   });
