@@ -209,6 +209,31 @@ function setNotice(message = '') {
   notice.hidden = !message;
 }
 
+function setPrivateValue(element, value) {
+  if (value === '') {
+    delete element.dataset.privateValue;
+    element.textContent = '';
+    return;
+  }
+  element.dataset.privateValue = value;
+  element.textContent = state.hideAmounts ? '••••••' : value;
+}
+
+function applyPrivateValues() {
+  document.querySelectorAll('[data-private-value]:not([data-private-value=""])').forEach(element => {
+    element.textContent = state.hideAmounts ? '••••••' : element.dataset.privateValue;
+  });
+}
+
+function updateAmountVisibility() {
+  applyPrivateValues();
+  const toggle = document.querySelector('#amount-visibility-toggle');
+  toggle.setAttribute('aria-pressed', String(state.hideAmounts));
+  toggle.setAttribute('aria-label', `${state.hideAmounts ? 'Show' : 'Hide'} dollar amounts`);
+  toggle.title = `${state.hideAmounts ? 'Show' : 'Hide'} dollar amounts`;
+  Object.values(chartInstances).forEach(chart => chart.update());
+}
+
 function destroyChart(name) {
   if (chartInstances[name]) {
     chartInstances[name].destroy();
@@ -217,19 +242,20 @@ function destroyChart(name) {
 }
 
 function chartOptions(formatter, extra = {}, type = 'line') {
+  const formatValue = value => state.hideAmounts && formatter === moneyExact ? '••••••' : formatter(value);
   const options = {
     responsive: true,
     maintainAspectRatio: false,
     interaction: { mode: 'index', intersect: false },
     plugins: {
       legend: { position: 'top', align: 'start', labels: { usePointStyle: true, boxWidth: 8, boxHeight: 8 } },
-      tooltip: { callbacks: { label: context => `${context.dataset.label}: ${formatter(context.parsed.y)}` } }
+      tooltip: { callbacks: { label: context => `${context.dataset.label}: ${formatValue(context.parsed.y)}` } }
     }
   };
   if (type !== 'doughnut') {
     options.scales = {
       x: { grid: { display: false }, ticks: { maxTicksLimit: 8, maxRotation: 0, color: '#748078' } },
-      y: { grid: { color: '#e4e9e4' }, ticks: { color: '#748078', callback: value => formatter(value) } }
+      y: { grid: { color: '#e4e9e4' }, ticks: { color: '#748078', callback: value => formatValue(value) } }
     };
   }
   return { ...options, ...extra };
@@ -260,7 +286,7 @@ const centerTextPlugin = {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#17211c';
     ctx.font = '700 15px Manrope, sans-serif';
-    ctx.fillText(moneyExact(total), x, y);
+    ctx.fillText(state.hideAmounts ? '••••••' : moneyExact(total), x, y);
     ctx.restore();
   }
 };
@@ -494,9 +520,9 @@ function renderPortfolio(data) {
   const percentText = value => value === null ? '' : `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
 
   document.querySelector('#account-count').textContent = accounts.length ? `${accounts.length} accounts` : '';
-  document.querySelector('#metric-market-value').textContent = moneyText(marketValue);
-  document.querySelector('#metric-contributions').textContent = moneyText(contributions);
-  document.querySelector('#metric-total-gain').textContent = moneyText(totalGain);
+  setPrivateValue(document.querySelector('#metric-market-value'), moneyText(marketValue));
+  setPrivateValue(document.querySelector('#metric-contributions'), moneyText(contributions));
+  setPrivateValue(document.querySelector('#metric-total-gain'), moneyText(totalGain));
   document.querySelector('#metric-total-gain').classList.toggle('negative', totalGain !== null && totalGain < 0);
   document.querySelector('#metric-blended-return').textContent = percentText(totalReturn);
   document.querySelector('#metric-blended-return').classList.toggle('negative', totalReturn !== null && totalReturn < 0);
@@ -544,8 +570,9 @@ function renderPortfolio(data) {
     const returnText = state.accountSummaryReturnMode === 'dollars'
       ? (accountGain === null ? '' : moneyExact(accountGain))
       : percentText(account.returnPercent);
-    return `<tr data-original-index="${index}" data-account-id="${account.id}" tabindex="0" aria-label="Open ${account.displayName} account details"><td>${account.displayName}</td><td>${account.accountType || '-'}</td><td data-sort-value="${account.holdings.length}">${account.holdings.length ? `${account.holdings.length} positions` : ''}</td><td>${moneyText(account.currentValue)}</td><td data-summary-return-dollars="${accountGain ?? ''}" data-summary-return-percent="${account.returnPercent ?? ''}" data-sort-value="${returnValue ?? ''}">${returnText}</td></tr>`;
+    return `<tr data-original-index="${index}" data-account-id="${account.id}" tabindex="0" aria-label="Open ${account.displayName} account details"><td>${account.displayName}</td><td>${account.accountType || '-'}</td><td data-sort-value="${account.holdings.length}">${account.holdings.length ? `${account.holdings.length} positions` : ''}</td><td data-private-value="${moneyText(account.currentValue)}">${moneyText(account.currentValue)}</td><td data-summary-return-dollars="${accountGain ?? ''}" data-summary-return-percent="${account.returnPercent ?? ''}" data-private-value="${state.accountSummaryReturnMode === 'dollars' ? returnText : ''}" data-sort-value="${returnValue ?? ''}">${returnText}</td></tr>`;
   }).join('');
+  applyPrivateValues();
   resetTableSort(document.querySelector('#account-summary-table'));
   const holdings = aggregateHoldings(accounts, marketValue);
   renderHoldingsTable(accounts, holdings);
@@ -562,10 +589,10 @@ function renderAccount(account) {
   document.querySelector('#account-date').textContent = account.latestDate
     ? `Updated ${account.latestDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
     : '';
-  document.querySelector('#account-value').textContent = account.currentValue === null ? '' : moneyExact(account.currentValue);
-  document.querySelector('#account-contributions').textContent = account.costBasis === null ? '' : moneyExact(account.costBasis);
+  setPrivateValue(document.querySelector('#account-value'), account.currentValue === null ? '' : moneyExact(account.currentValue));
+  setPrivateValue(document.querySelector('#account-contributions'), account.costBasis === null ? '' : moneyExact(account.costBasis));
   const accountGain = account.currentValue !== null && account.costBasis !== null ? account.currentValue - account.costBasis : null;
-  document.querySelector('#account-gain').textContent = accountGain === null ? '' : moneyExact(accountGain);
+  setPrivateValue(document.querySelector('#account-gain'), accountGain === null ? '' : moneyExact(accountGain));
   const totalShares = account.holdings.reduce((total, holding) => total + holding.shares, 0);
   document.querySelector('#account-holding-count').textContent = account.holdings.length
     ? `${account.holdings.length} positions · ${numberFormat.format(totalShares)} total shares`
@@ -579,8 +606,9 @@ function renderAccount(account) {
     const holdingReturnText = holdingReturn === null ? '' : `${holdingReturn > 0 ? '+' : ''}${holdingReturn.toFixed(1)}%`;
     const gainText = state.accountHoldingsGainMode === 'percent' ? holdingReturnText : holding.gain === null ? '' : moneyExact(holding.gain);
     const gainSortValue = state.accountHoldingsGainMode === 'percent' ? holdingReturn ?? '' : holding.gain ?? '';
-    return `<tr data-original-index="${index}"><td class="ticker">${holding.symbol}</td><td>${numberFormat.format(holding.shares)}</td><td>${holdingCostBasis === null ? '' : moneyExact(holdingCostBasis)}</td><td>${holding.marketValue === null ? '' : moneyExact(holding.marketValue)}</td><td data-gain-dollars="${holding.gain ?? ''}" data-gain-percent="${holdingReturn ?? ''}" data-sort-value="${gainSortValue}">${gainText}</td></tr>`;
+    return `<tr data-original-index="${index}"><td class="ticker">${holding.symbol}</td><td>${numberFormat.format(holding.shares)}</td><td data-private-value="${holdingCostBasis === null ? '' : moneyExact(holdingCostBasis)}">${holdingCostBasis === null ? '' : moneyExact(holdingCostBasis)}</td><td data-private-value="${holding.marketValue === null ? '' : moneyExact(holding.marketValue)}">${holding.marketValue === null ? '' : moneyExact(holding.marketValue)}</td><td data-gain-dollars="${holding.gain ?? ''}" data-gain-percent="${holdingReturn ?? ''}" data-private-value="${state.accountHoldingsGainMode === 'dollars' && holding.gain !== null ? moneyExact(holding.gain) : ''}" data-sort-value="${gainSortValue}">${gainText}</td></tr>`;
   }).join('');
+  applyPrivateValues();
   resetTableSort(document.querySelector('#current-positions-table'));
   if (document.querySelector('#accounts-panel').classList.contains('is-visible')) renderAccountChart(account);
 }
@@ -607,7 +635,7 @@ function setView(view) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-const state = { data: null, holdingsGainMode: 'dollars', accountHoldingsGainMode: 'dollars', accountSummaryReturnMode: 'percent' };
+const state = { data: null, hideAmounts: false, holdingsGainMode: 'dollars', accountHoldingsGainMode: 'dollars', accountSummaryReturnMode: 'percent' };
 const dashboard = document.querySelector('#dashboard');
 const authGate = document.querySelector('#auth-gate');
 const signIn = async () => {
@@ -624,6 +652,10 @@ const signIn = async () => {
 
 document.querySelector('#sign-in-button').addEventListener('click', signIn);
 document.querySelector('#gate-sign-in-button').addEventListener('click', signIn);
+document.querySelector('#amount-visibility-toggle').addEventListener('click', () => {
+  state.hideAmounts = !state.hideAmounts;
+  updateAmountVisibility();
+});
 document.querySelector('#sign-out-button').addEventListener('click', () => {
   setNotice();
   signOut(auth).catch(error => setNotice(`Sign-out failed (${error.code ?? 'unknown'}): ${error.message}`));
@@ -664,9 +696,15 @@ document.querySelector('#current-positions-table').addEventListener('click', eve
     const value = state.accountHoldingsGainMode === 'percent' ? cell.dataset.gainPercent : cell.dataset.gainDollars;
     const number = numeric(value);
     cell.dataset.sortValue = value;
-    cell.textContent = number === null ? '' : state.accountHoldingsGainMode === 'percent'
+    const text = number === null ? '' : state.accountHoldingsGainMode === 'percent'
       ? `${number > 0 ? '+' : ''}${number.toFixed(1)}%`
       : moneyExact(number);
+    if (state.accountHoldingsGainMode === 'percent') {
+      delete cell.dataset.privateValue;
+      cell.textContent = text;
+    } else {
+      setPrivateValue(cell, text);
+    }
   });
   const table = document.querySelector('#current-positions-table');
   const sortedColumn = Number(table.dataset.sortColumn);
@@ -683,9 +721,15 @@ document.querySelector('#account-summary-table').addEventListener('click', event
     const value = state.accountSummaryReturnMode === 'dollars' ? cell.dataset.summaryReturnDollars : cell.dataset.summaryReturnPercent;
     const number = numeric(value);
     cell.dataset.sortValue = value;
-    cell.textContent = number === null ? '' : state.accountSummaryReturnMode === 'dollars'
+    const text = number === null ? '' : state.accountSummaryReturnMode === 'dollars'
       ? moneyExact(number)
       : `${number > 0 ? '+' : ''}${number.toFixed(1)}%`;
+    if (state.accountSummaryReturnMode === 'dollars') {
+      setPrivateValue(cell, text);
+    } else {
+      delete cell.dataset.privateValue;
+      cell.textContent = text;
+    }
   });
   const table = document.querySelector('#account-summary-table');
   const sortedColumn = Number(table.dataset.sortColumn);

@@ -131,6 +131,12 @@ footer { display: flex; justify-content: space-between; padding: 23px clamp(24px
 .timeframe-control { display: flex; align-items: center; gap: 8px; color: var(--muted); font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; }
 .timeframe-control select { min-width: 112px; padding: 8px 28px 8px 10px; }
 .overview-toolbar .account-count { color: var(--muted); font-family: "DM Mono", monospace; font-size: 10px; }
+.amount-visibility-toggle { display: grid; flex: 0 0 34px; place-items: center; width: 34px; height: 34px; padding: 7px; color: var(--green); border: 1px solid var(--line); border-radius: 3px; background: var(--white); cursor: pointer; }
+.amount-visibility-toggle:hover { background: #f2f7f2; }
+.amount-visibility-toggle:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.amount-visibility-toggle svg { width: 18px; height: 18px; }
+.amount-visibility-toggle .eye-off-icon, .amount-visibility-toggle[aria-pressed="true"] .eye-icon { display: none; }
+.amount-visibility-toggle[aria-pressed="true"] .eye-off-icon { display: block; }
 .gain-heading { display: grid; justify-items: start; gap: 6px; }
 .gain-toggle { display: inline-flex; overflow: hidden; border: 1px solid var(--line); border-radius: 3px; }
 .gain-toggle button { min-width: 28px; padding: 3px 6px; color: var(--muted); border: 0; border-right: 1px solid var(--line); background: var(--white); font: 11px "DM Mono", monospace; cursor: pointer; }
