@@ -42,6 +42,32 @@ function orderedRows(rows) {
     .sort((left, right) => left.date - right.date);
 }
 
+function timeframeStartDate(timeframe, endDate) {
+  if (timeframe === 'All' || !endDate) return null;
+  if (timeframe === 'YTD') return new Date(Date.UTC(endDate.getUTCFullYear(), 0, 1));
+  const start = new Date(endDate);
+  const day = start.getUTCDate();
+  start.setUTCDate(1);
+  if (timeframe === '5yrs') start.setUTCFullYear(start.getUTCFullYear() - 5);
+  else if (timeframe === '1yr') start.setUTCFullYear(start.getUTCFullYear() - 1);
+  else if (timeframe === '6mo') start.setUTCMonth(start.getUTCMonth() - 6);
+  const lastDay = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0)).getUTCDate();
+  start.setUTCDate(Math.min(day, lastDay));
+  start.setUTCHours(0, 0, 0, 0);
+  return start;
+}
+
+function timeframeRows(rows, timeframe, endDate = rows.at(-1)?.date) {
+  const startDate = timeframeStartDate(timeframe, endDate);
+  return rows.filter(point => point.date <= endDate && (!startDate || point.date >= startDate));
+}
+
+function timeframeBaseline(rows, visibleRows) {
+  const firstVisible = visibleRows[0];
+  if (!firstVisible) return null;
+  return rows.filter(point => point.date < firstVisible.date).at(-1) ?? firstVisible;
+}
+
 function getField(row, ...names) {
   for (const name of names) {
     if (row[name] !== undefined) return row[name];
@@ -166,6 +192,67 @@ function positionValues(row) {
   }, {});
 }
 
+function positionCostBasisValues(row) {
+  return accountPositions(row).reduce((values, holding) => {
+    if (holding.shares !== null && holding.shares !== 0 && holding.averageCost !== null) {
+      values[holding.symbol] = holding.shares * holding.averageCost;
+    }
+    return values;
+  }, {});
+}
+
+function accountCostBasis(row) {
+  const reportedCostBasis = numeric(row.daily_acct_total_cb);
+  if (reportedCostBasis !== null) return reportedCostBasis;
+  const holdings = accountPositions(row).filter(holding => holding.shares !== null && holding.shares !== 0);
+  return holdings.length && holdings.every(holding => holding.averageCost !== null)
+    ? holdings.reduce((total, holding) => total + holding.shares * holding.averageCost, 0)
+    : null;
+}
+
+function accountWindowReturn(account, endDate) {
+  if (state.timeframe === 'All') {
+    return {
+      gain: account.currentValue !== null && account.costBasis !== null ? account.currentValue - account.costBasis : null,
+      returnPercent: account.returnPercent
+    };
+  }
+  const throughDate = endDate ?? account.history.at(-1)?.date;
+  const history = timeframeRows(account.history, state.timeframe, throughDate);
+  if (!history.length) return { gain: null, returnPercent: null };
+  const start = timeframeBaseline(account.history, history);
+  const end = history[history.length - 1];
+  if (start.value === null || end.value === null) return { gain: null, returnPercent: null };
+  const startGain = start.costBasis === null ? null : start.value - start.costBasis;
+  const endGain = end.costBasis === null ? null : end.value - end.costBasis;
+  const hasCostBasis = startGain !== null && endGain !== null;
+  const gain = hasCostBasis ? endGain - startGain : end.value - start.value;
+  const invested = hasCostBasis ? start.costBasis : start.value;
+  return { gain, returnPercent: invested > 0 ? gain / invested * 100 : null };
+}
+
+function positionWindowReturn(account, holding, endDate) {
+  const currentCostBasis = holding.averageCost === null ? null : holding.shares * holding.averageCost;
+  if (state.timeframe === 'All') {
+    return {
+      gain: holding.gain,
+      returnPercent: holding.gain !== null && currentCostBasis > 0 ? holding.gain / currentCostBasis * 100 : null
+    };
+  }
+  const throughDate = endDate ?? account.history.at(-1)?.date;
+  const history = timeframeRows(account.history, state.timeframe, throughDate);
+  if (!history.length) return { gain: null, returnPercent: null };
+  const start = timeframeBaseline(account.history, history);
+  const end = history[history.length - 1];
+  const startValue = start.positionValues[holding.symbol] ?? 0;
+  const endValue = end.positionValues[holding.symbol] ?? 0;
+  const startGain = startValue - (start.positionCostBasisValues[holding.symbol] ?? 0);
+  const endGain = endValue - (end.positionCostBasisValues[holding.symbol] ?? currentCostBasis ?? 0);
+  const gain = endGain - startGain;
+  const invested = start.positionCostBasisValues[holding.symbol] ?? startValue;
+  return { gain, returnPercent: invested > 0 ? gain / invested * 100 : null };
+}
+
 function accountModel(name, rows) {
   const ordered = orderedRows(rows).map(({ row, date }) => ({
     row,
@@ -187,9 +274,7 @@ function accountModel(name, rows) {
   const currentValue = latest.value ?? (holdings.length && holdings.every(item => item.marketValue !== null)
     ? holdings.reduce((total, item) => total + item.marketValue, 0)
     : null);
-  const costBasis = numeric(latest.row.daily_acct_total_cb) ?? (holdings.length && holdings.every(item => item.averageCost !== null)
-    ? holdings.reduce((total, item) => total + item.shares * item.averageCost, 0)
-    : null);
+  const costBasis = accountCostBasis(latest.row);
 
   return {
     id: name,
@@ -200,7 +285,13 @@ function accountModel(name, rows) {
     currentValue,
     costBasis,
     returnPercent: currentValue !== null && costBasis > 0 ? (currentValue / costBasis - 1) * 100 : null,
-    history: ordered.map(point => ({ date: point.date, value: valueOrNull(point.value), positionValues: positionValues(point.row) })),
+    history: ordered.map(point => ({
+      date: point.date,
+      value: valueOrNull(point.value),
+      costBasis: accountCostBasis(point.row),
+      positionValues: positionValues(point.row),
+      positionCostBasisValues: positionCostBasisValues(point.row)
+    })),
     holdings
   };
 }
@@ -592,6 +683,10 @@ function renderPortfolio(data) {
   const totalReturn = latestPortfolio?.cbAdjReturn ?? null;
   const moneyText = value => value === null ? '' : moneyExact(value);
   const percentText = value => value === null ? '' : `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
+  const portfolioEndDate = portfolio.at(-1)?.date;
+  const visiblePortfolio = timeframeRows(portfolio, state.timeframe, portfolioEndDate);
+  const returnBaseline = timeframeBaseline(portfolio, visiblePortfolio);
+  const visibleAggregateRows = visiblePortfolio.filter(point => point.value !== null);
 
   document.querySelector('#account-count').textContent = accounts.length ? `${accounts.length} accounts` : '';
   setPrivateValue(document.querySelector('#metric-market-value'), moneyText(marketValue));
@@ -604,9 +699,9 @@ function renderPortfolio(data) {
     ? `Updated ${data.updatedAt.toISOString().slice(0, 10)}`
     : '';
 
-  const historyLabels = aggregateRows.map(point => point.date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }));
+  const historyLabels = visibleAggregateRows.map(point => point.date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }));
   makeChart('portfolioValue', 'portfolio-value-chart', 'line', historyLabels, [
-    lineDataset('Portfolio value', aggregateRows.map(point => point.value), '#235c48', {
+    lineDataset('Portfolio value', visibleAggregateRows.map(point => point.value), '#235c48', {
       borderWidth: 2.5,
       fill: true,
       backgroundColor: 'rgba(86, 185, 138, .14)'
@@ -618,34 +713,43 @@ function renderPortfolio(data) {
     { data: accountsWithValue.map(account => account.currentValue), backgroundColor: accountsWithValue.map((_, index) => accountColors[index % accountColors.length]), borderWidth: 0, hoverOffset: 4 }
   ], moneyExact, { cutout: '68%', plugins: { legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, padding: 12 } } } });
 
-  const labels = portfolio.map(point => point.date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }));
-  const spyReturns = spyCumulativeReturns(portfolio, data.spyPrices ?? []);
-    const firstReturnPoint = portfolio.find(point => point.value !== null && point.cumulativeReturn !== null);
-    const initialPortfolioValue = firstReturnPoint ? firstReturnPoint.value - firstReturnPoint.cumulativeReturn : null;
+  const labels = visiblePortfolio.map(point => point.date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }));
+  const spyReturns = spyCumulativeReturns(visiblePortfolio, data.spyPrices ?? []);
+  const returnAnchor = state.timeframe === 'All'
+    ? portfolio.find(point => point.value !== null && point.cumulativeReturn !== null)
+    : [returnBaseline, ...visiblePortfolio].find(point => point?.value !== null && point?.cumulativeReturn !== null);
+  const initialPortfolioValue = returnAnchor ? returnAnchor.value - returnAnchor.cumulativeReturn : null;
+  const cumulativeReturnBase = state.timeframe === 'All' ? 0 : returnAnchor?.cumulativeReturn ?? 0;
+  const cbAdjReturnBase = state.timeframe === 'All' ? 0 : returnAnchor?.cbAdjReturn ?? 0;
+  const alphaBase = state.timeframe === 'All' ? 0 : returnAnchor?.alpha ?? 0;
   makeChart('returns', 'returns-chart', 'line', labels, [
-      lineDataset('Cumulative return', portfolio.map(point => initialPortfolioValue && point.cumulativeReturn !== null ? point.cumulativeReturn / initialPortfolioValue * 100 : null), '#4776d0'),
-    lineDataset('CB-adjusted return', portfolio.map(point => point.cbAdjReturn), '#235c48'),
+    lineDataset('Cumulative return', visiblePortfolio.map(point => initialPortfolioValue && point.cumulativeReturn !== null
+      ? (point.cumulativeReturn - cumulativeReturnBase) / initialPortfolioValue * 100
+      : null), '#4776d0'),
+    lineDataset('CB-adjusted return', visiblePortfolio.map(point => point.cbAdjReturn === null ? null : point.cbAdjReturn - cbAdjReturnBase), '#235c48'),
     lineDataset('S&P 500', spyReturns, '#e8896b')
   ], value => `${Number(value).toFixed(1)}%`);
   makeChart('alpha', 'alpha-chart', 'line', labels, [
-    lineDataset('Cumulative alpha', portfolio.map(point => point.alpha), '#4776d0')
+    lineDataset('Cumulative alpha', visiblePortfolio.map(point => point.alpha === null ? null : point.alpha - alphaBase), '#4776d0')
   ], value => `${Number(value).toFixed(1)}%`, { plugins: { legend: { display: false } } });
   makeChart('dailyAlpha', 'daily-alpha-chart', 'bar', labels, [
-    barDataset('Daily alpha', portfolio.map(point => point.dailyAlpha), '#56b98a')
+    barDataset('Daily alpha', visiblePortfolio.map(point => point.dailyAlpha), '#56b98a')
   ], value => `${Number(value).toFixed(2)}%`, { plugins: { legend: { display: false } } });
   makeChart('dailyReturn', 'daily-return-chart', 'bar', labels, [
-    barDataset('Daily return', portfolio.map(point => point.dailyReturn), '#e8896b')
+    barDataset('Daily return', visiblePortfolio.map(point => point.dailyReturn), '#e8896b')
   ], moneyExact, { plugins: { legend: { display: false } } });
 
   const accountSelect = document.querySelector('#account-select');
+  const selectedAccountId = accountSelect.value;
   accountSelect.innerHTML = accounts.map(account => `<option value="${account.id}">${account.displayName}</option>`).join('');
+  accountSelect.value = accounts.some(account => account.id === selectedAccountId) ? selectedAccountId : accounts[0]?.id ?? '';
   document.querySelector('#account-summary').innerHTML = accounts.map((account, index) => {
-    const accountGain = account.currentValue !== null && account.costBasis !== null ? account.currentValue - account.costBasis : null;
-    const returnValue = state.accountSummaryReturnMode === 'dollars' ? accountGain : account.returnPercent;
+    const periodReturn = accountWindowReturn(account, portfolioEndDate);
+    const returnValue = state.accountSummaryReturnMode === 'dollars' ? periodReturn.gain : periodReturn.returnPercent;
     const returnText = state.accountSummaryReturnMode === 'dollars'
-      ? (accountGain === null ? '' : moneyExact(accountGain))
-      : percentText(account.returnPercent);
-    return `<tr data-original-index="${index}" data-account-id="${account.id}" tabindex="0" aria-label="Open ${account.displayName} account details"><td>${account.displayName}</td><td>${account.accountType || '-'}</td><td data-sort-value="${account.holdings.length}">${account.holdings.length ? `${account.holdings.length} positions` : ''}</td><td data-private-value="${moneyText(account.currentValue)}">${moneyText(account.currentValue)}</td><td data-summary-return-dollars="${accountGain ?? ''}" data-summary-return-percent="${account.returnPercent ?? ''}" data-private-value="${state.accountSummaryReturnMode === 'dollars' ? returnText : ''}" data-sort-value="${returnValue ?? ''}">${returnText}</td></tr>`;
+      ? (periodReturn.gain === null ? '' : moneyExact(periodReturn.gain))
+      : percentText(periodReturn.returnPercent);
+    return `<tr data-original-index="${index}" data-account-id="${account.id}" tabindex="0" aria-label="Open ${account.displayName} account details"><td>${account.displayName}</td><td>${account.accountType || '-'}</td><td data-sort-value="${account.holdings.length}">${account.holdings.length ? `${account.holdings.length} positions` : ''}</td><td data-private-value="${moneyText(account.currentValue)}">${moneyText(account.currentValue)}</td><td data-summary-return-dollars="${periodReturn.gain ?? ''}" data-summary-return-percent="${periodReturn.returnPercent ?? ''}" data-private-value="${state.accountSummaryReturnMode === 'dollars' ? returnText : ''}" data-sort-value="${returnValue ?? ''}">${returnText}</td></tr>`;
   }).join('');
   applyPrivateValues();
   resetTableSort(document.querySelector('#account-summary-table'));
@@ -654,7 +758,8 @@ function renderPortfolio(data) {
   state.data.holdings = holdings;
   state.data.sectors = buildSectorData(portfolio, accounts, holdings, sectorDefinitions);
   renderSectorBreakdowns(state.data.sectors.sectors, state.data.sectors.portfolioValue);
-  if (accounts.length) renderAccount(accounts[0]);
+  const selectedAccount = accounts.find(account => account.id === accountSelect.value);
+  if (selectedAccount) renderAccount(selectedAccount);
 }
 
 function renderAccount(account) {
@@ -666,22 +771,24 @@ function renderAccount(account) {
     : '';
   setPrivateValue(document.querySelector('#account-value'), account.currentValue === null ? '' : moneyExact(account.currentValue));
   setPrivateValue(document.querySelector('#account-contributions'), account.costBasis === null ? '' : moneyExact(account.costBasis));
-  const accountGain = account.currentValue !== null && account.costBasis !== null ? account.currentValue - account.costBasis : null;
-  setPrivateValue(document.querySelector('#account-gain'), accountGain === null ? '' : moneyExact(accountGain));
+  const periodReturn = accountWindowReturn(account, state.data?.portfolio.at(-1)?.date);
+  setPrivateValue(document.querySelector('#account-gain'), periodReturn.gain === null ? '' : moneyExact(periodReturn.gain));
   const totalShares = account.holdings.reduce((total, holding) => total + holding.shares, 0);
   document.querySelector('#account-holding-count').textContent = account.holdings.length
     ? `${account.holdings.length} positions · ${numberFormat.format(totalShares)} total shares`
     : '';
-  const formattedReturn = account.returnPercent === null ? '' : `${account.returnPercent > 0 ? '+' : ''}${account.returnPercent.toFixed(1)}%`;
+  const formattedReturn = periodReturn.returnPercent === null ? '' : `${periodReturn.returnPercent > 0 ? '+' : ''}${periodReturn.returnPercent.toFixed(1)}%`;
   document.querySelector('#account-return').textContent = formattedReturn;
   document.querySelector('#account-performance-return').textContent = formattedReturn;
+  const accountEndDate = state.data?.portfolio.at(-1)?.date;
   document.querySelector('#account-holdings').innerHTML = account.holdings.map((holding, index) => {
     const holdingCostBasis = holding.averageCost === null ? null : holding.shares * holding.averageCost;
-    const holdingReturn = holding.gain !== null && holdingCostBasis > 0 ? holding.gain / holdingCostBasis * 100 : null;
+    const holdingWindow = positionWindowReturn(account, holding, accountEndDate);
+    const holdingReturn = holdingWindow.returnPercent;
     const holdingReturnText = holdingReturn === null ? '' : `${holdingReturn > 0 ? '+' : ''}${holdingReturn.toFixed(1)}%`;
-    const gainText = state.accountHoldingsGainMode === 'percent' ? holdingReturnText : holding.gain === null ? '' : moneyExact(holding.gain);
-    const gainSortValue = state.accountHoldingsGainMode === 'percent' ? holdingReturn ?? '' : holding.gain ?? '';
-    return `<tr data-original-index="${index}"><td class="ticker">${holding.symbol}</td><td>${numberFormat.format(holding.shares)}</td><td data-private-value="${holdingCostBasis === null ? '' : moneyExact(holdingCostBasis)}">${holdingCostBasis === null ? '' : moneyExact(holdingCostBasis)}</td><td data-private-value="${holding.marketValue === null ? '' : moneyExact(holding.marketValue)}">${holding.marketValue === null ? '' : moneyExact(holding.marketValue)}</td><td data-gain-dollars="${holding.gain ?? ''}" data-gain-percent="${holdingReturn ?? ''}" data-private-value="${state.accountHoldingsGainMode === 'dollars' && holding.gain !== null ? moneyExact(holding.gain) : ''}" data-sort-value="${gainSortValue}">${gainText}</td></tr>`;
+    const gainText = state.accountHoldingsGainMode === 'percent' ? holdingReturnText : holdingWindow.gain === null ? '' : moneyExact(holdingWindow.gain);
+    const gainSortValue = state.accountHoldingsGainMode === 'percent' ? holdingReturn ?? '' : holdingWindow.gain ?? '';
+    return `<tr data-original-index="${index}"><td class="ticker">${holding.symbol}</td><td>${numberFormat.format(holding.shares)}</td><td data-private-value="${holdingCostBasis === null ? '' : moneyExact(holdingCostBasis)}">${holdingCostBasis === null ? '' : moneyExact(holdingCostBasis)}</td><td data-private-value="${holding.marketValue === null ? '' : moneyExact(holding.marketValue)}">${holding.marketValue === null ? '' : moneyExact(holding.marketValue)}</td><td data-gain-dollars="${holdingWindow.gain ?? ''}" data-gain-percent="${holdingReturn ?? ''}" data-private-value="${state.accountHoldingsGainMode === 'dollars' && holdingWindow.gain !== null ? moneyExact(holdingWindow.gain) : ''}" data-sort-value="${gainSortValue}">${gainText}</td></tr>`;
   }).join('');
   applyPrivateValues();
   resetTableSort(document.querySelector('#current-positions-table'));
@@ -689,9 +796,11 @@ function renderAccount(account) {
 }
 
 function renderAccountChart(account) {
-  const labels = account.history.map(point => point.date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }));
+  const endDate = state.data?.portfolio.at(-1)?.date ?? account.history.at(-1)?.date;
+  const history = timeframeRows(account.history, state.timeframe, endDate);
+  const labels = history.map(point => point.date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }));
   makeChart('accountValue', 'account-value-chart', 'line', labels, [
-    lineDataset(account.displayName, account.history.map(point => point.value), '#235c48', { borderWidth: 2.5, fill: true, backgroundColor: 'rgba(86, 185, 138, .14)' })
+    lineDataset(account.displayName, history.map(point => point.value), '#235c48', { borderWidth: 2.5, fill: true, backgroundColor: 'rgba(86, 185, 138, .14)' })
   ], moneyExact, { plugins: { legend: { display: false } } });
 }
 
@@ -710,7 +819,7 @@ function setView(view) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-const state = { data: null, hideAmounts: false, holdingsGainMode: 'dollars', accountHoldingsGainMode: 'dollars', accountSummaryReturnMode: 'percent' };
+const state = { data: null, hideAmounts: false, timeframe: 'All', holdingsGainMode: 'dollars', accountHoldingsGainMode: 'dollars', accountSummaryReturnMode: 'percent' };
 const dashboard = document.querySelector('#dashboard');
 const authGate = document.querySelector('#auth-gate');
 const signIn = async () => {
@@ -734,6 +843,12 @@ document.querySelector('#amount-visibility-toggle').addEventListener('click', ()
 document.querySelector('#sign-out-button').addEventListener('click', () => {
   setNotice();
   signOut(auth).catch(error => setNotice(`Sign-out failed (${error.code ?? 'unknown'}): ${error.message}`));
+});
+const timeframeControl = document.querySelector('#overview-timeframe');
+timeframeControl.value = state.timeframe;
+timeframeControl.addEventListener('change', event => {
+  state.timeframe = event.target.value;
+  if (state.data) renderPortfolio(state.data);
 });
 document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => setView(tab.dataset.tab)));
 document.querySelectorAll('[data-sortable-table]').forEach(table => {
