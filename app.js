@@ -46,20 +46,91 @@ function getField(row, ...names) {
   for (const name of names) {
     if (row[name] !== undefined) return row[name];
   }
-  return null;
+  const normalizedNames = new Set(names.map(name => name.toLowerCase().replace(/[^a-z0-9]/g, '')));
+  const match = Object.entries(row).find(([name]) => normalizedNames.has(name.toLowerCase().replace(/[^a-z0-9]/g, '')));
+  return match?.[1] ?? null;
 }
 
 function portfolioModel(rows) {
-  return orderedRows(rows ?? []).map(({ row, date }) => ({
-    date,
-    value: numeric(getField(row, 'portfolio_value', 'Portfolio Value')),
-    cumulativeReturn: numeric(getField(row, 'cumulative_return', 'Cumulative Return $')),
-    cbAdjReturn: numeric(getField(row, 'cb_adj_return', 'CB-adj. Return')),
-    spy: numeric(getField(row, 'spy', 'Spy')),
-    alpha: numeric(getField(row, 'alpha', 'Alpha')),
-    dailyAlpha: numeric(getField(row, 'alpha_daily_cbadj', 'Alpha Daily - cbadj')),
-    dailyReturn: numeric(getField(row, 'cb_adj_daily_return', 'CB-Adj Daily return'))
-  }));
+  let previousCumulativeReturn = null;
+  return orderedRows(rows ?? []).map(({ row, date }) => {
+    const cumulativeReturn = numeric(getField(row, 'cumulative_return', 'Cumulative Return $'));
+    const reportedDailyReturn = numeric(getField(row,
+      'cb_adj_daily_return', 'CB-Adj Daily return', 'CB-Adj Daily Return', 'daily_return', 'Daily Return'));
+    const point = {
+      date,
+      value: numeric(getField(row, 'portfolio_value', 'Portfolio Value')),
+      cumulativeReturn,
+      cbAdjReturn: numeric(getField(row, 'cb_adj_return', 'CB-adj. Return')),
+      spy: numeric(getField(row, 'spy', 'Spy')),
+      alpha: numeric(getField(row, 'alpha', 'Alpha')),
+      dailyAlpha: numeric(getField(row, 'alpha_daily_cbadj', 'Alpha Daily - cbadj')),
+      dailyReturn: reportedDailyReturn ?? (cumulativeReturn !== null && previousCumulativeReturn !== null
+        ? cumulativeReturn - previousCumulativeReturn
+        : null)
+    };
+    previousCumulativeReturn = cumulativeReturn;
+    return point;
+  });
+}
+
+async function fetchSpyPrices(portfolio) {
+  if (!portfolio.length) return [];
+  const firstDate = portfolio[0].date;
+  const lastDate = portfolio[portfolio.length - 1].date;
+  const start = Math.floor((firstDate.getTime() - 86400000) / 1000);
+  const end = Math.ceil((lastDate.getTime() + 86400000) / 1000);
+  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/SPY?period1=${start}&period2=${end}&interval=1d`;
+
+  try {
+    const response = await fetch(yahooUrl, { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error(`Yahoo Finance returned ${response.status}`);
+    const result = (await response.json()).chart?.result?.[0];
+    const closes = result?.indicators?.quote?.[0]?.close ?? [];
+    const prices = (result?.timestamp ?? []).flatMap((timestamp, index) => {
+      const close = numeric(closes[index]);
+      return close === null ? [] : [{ date: new Date(timestamp * 1000), close }];
+    });
+    if (prices.length) return prices;
+  } catch (error) {
+    console.warn('Unable to load SPY prices from Yahoo Finance; using the local price file.', error);
+  }
+
+  try {
+    const response = await fetch('./data/process_data/symbol_prices.csv');
+    if (!response.ok) throw new Error(`Local price file returned ${response.status}`);
+    const [header, ...lines] = (await response.text()).trim().split(/\r?\n/);
+    const columns = header.split(',');
+    const dateColumn = columns.indexOf('Date');
+    const spyColumn = columns.indexOf('SPY');
+    if (dateColumn < 0 || spyColumn < 0) return [];
+    return lines.flatMap(line => {
+      const fields = line.split(',');
+      const close = numeric(fields[spyColumn]);
+      const date = new Date(`${fields[dateColumn]}T00:00:00Z`);
+      return close === null || Number.isNaN(date.getTime()) ? [] : [{ date, close }];
+    });
+  } catch (error) {
+    console.warn('Unable to load the local SPY price file.', error);
+    return [];
+  }
+}
+
+function spyCumulativeReturns(portfolio, prices) {
+  if (!prices.length) return portfolio.map(point => point.spy);
+  const orderedPrices = [...prices].sort((left, right) => left.date - right.date);
+  let priceIndex = 0;
+  let latestClose = null;
+  let baseClose = null;
+  return portfolio.map(point => {
+    while (priceIndex < orderedPrices.length && orderedPrices[priceIndex].date <= point.date) {
+      latestClose = orderedPrices[priceIndex].close;
+      priceIndex += 1;
+    }
+    if (latestClose === null) return null;
+    if (baseClose === null) baseClose = latestClose;
+    return baseClose > 0 ? (latestClose / baseClose - 1) * 100 : null;
+  });
 }
 
 function accountPositions(row) {
@@ -195,8 +266,11 @@ async function loadData(uid) {
       };
     });
   const allDatasets = [portfolioTotal, accountMetadata, sectorDefinitions, ...accountDatasets.map(([, dataset]) => dataset)];
+  const portfolio = portfolioModel(portfolioTotal?.rows);
+  const spyPrices = await fetchSpyPrices(portfolio);
   return {
-    portfolio: portfolioModel(portfolioTotal?.rows),
+    portfolio,
+    spyPrices,
     accounts,
     sectorDefinitions: normalizeSectorDefinitions(sectorDefinitions?.rows),
     updatedAt: allDatasets.map(dataset => dataset?.updatedAt).filter(Boolean).sort((a, b) => b - a)[0] ?? null
@@ -545,12 +619,13 @@ function renderPortfolio(data) {
   ], moneyExact, { cutout: '68%', plugins: { legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, padding: 12 } } } });
 
   const labels = portfolio.map(point => point.date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }));
+  const spyReturns = spyCumulativeReturns(portfolio, data.spyPrices ?? []);
     const firstReturnPoint = portfolio.find(point => point.value !== null && point.cumulativeReturn !== null);
     const initialPortfolioValue = firstReturnPoint ? firstReturnPoint.value - firstReturnPoint.cumulativeReturn : null;
   makeChart('returns', 'returns-chart', 'line', labels, [
       lineDataset('Cumulative return', portfolio.map(point => initialPortfolioValue && point.cumulativeReturn !== null ? point.cumulativeReturn / initialPortfolioValue * 100 : null), '#4776d0'),
     lineDataset('CB-adjusted return', portfolio.map(point => point.cbAdjReturn), '#235c48'),
-    lineDataset('S&P 500', portfolio.map(point => point.spy), '#e8896b')
+    lineDataset('S&P 500', spyReturns, '#e8896b')
   ], value => `${Number(value).toFixed(1)}%`);
   makeChart('alpha', 'alpha-chart', 'line', labels, [
     lineDataset('Cumulative alpha', portfolio.map(point => point.alpha), '#4776d0')
