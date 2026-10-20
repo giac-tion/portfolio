@@ -1,20 +1,6 @@
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
-import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
-import { collection, doc, getDoc, getDocs, getFirestore } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
-
-const firebaseConfig = {
-  apiKey: 'AIzaSyCjrpdzRYFcnvGMoFg8PHY3EppYS7eTYCc',
-  authDomain: 'portfolio-36344.firebaseapp.com',
-  projectId: 'portfolio-36344',
-  storageBucket: 'portfolio-36344.firebasestorage.app',
-  messagingSenderId: '13344479629',
-  appId: '1:13344479629:web:1e9a9c95f855d2d71685c4'
-};
-
-const firebaseApp = initializeApp(firebaseConfig);
-const auth = getAuth(firebaseApp);
-const database = getFirestore(firebaseApp);
-const provider = new GoogleAuthProvider();
+import { onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
+import { auth, authPersistenceReady, database, provider } from './firebase.js';
+import { readDatasetMetadata, readVersionedDataset } from './firestore-datasets.js';
 const chartInstances = {};
 const accountColors = ['#235c48', '#56b98a', '#e8896b', '#82b7c5', '#f5c85d', '#4776d0', '#b86f4b', '#609b79', '#8a9e47', '#637b8a'];
 const sectorColors = ['#235c48', '#e8896b', '#4776d0', '#d19a28', '#56b98a', '#b86f4b', '#82b7c5', '#8a9e47', '#637b8a', '#b86b83'];
@@ -82,13 +68,13 @@ function portfolioModel(rows) {
   return orderedRows(rows ?? []).map(({ row, date }) => {
     const cumulativeReturn = numeric(getField(row, 'cumulative_return', 'Cumulative Return $'));
     const reportedDailyReturn = numeric(getField(row,
-      'cb_adj_daily_return', 'CB-Adj Daily return', 'CB-Adj Daily Return', 'daily_return', 'Daily Return'));
+      'cb_adj_daily_return', 'CB-Adj Daily return', 'CB-Adj Daily Return', 'Return Daily - cbadj', 'daily_return', 'Daily Return'));
     const point = {
       date,
       value: numeric(getField(row, 'portfolio_value', 'Portfolio Value')),
       cumulativeReturn,
       cbAdjReturn: numeric(getField(row, 'cb_adj_return', 'CB-adj. Return')),
-      spy: numeric(getField(row, 'spy', 'Spy')),
+      spy: numeric(getField(row, 'spy', 'Spy', 'Spy % return')),
       alpha: numeric(getField(row, 'alpha', 'Alpha')),
       dailyAlpha: numeric(getField(row, 'alpha_daily_cbadj', 'Alpha Daily - cbadj')),
       dailyReturn: reportedDailyReturn ?? (cumulativeReturn !== null && previousCumulativeReturn !== null
@@ -296,22 +282,15 @@ function accountModel(name, rows) {
   };
 }
 
-async function readDataset(uid, name) {
-  const reference = doc(database, 'users', uid, 'datasets', name);
-  const snapshot = await getDoc(reference);
-  if (!snapshot.exists()) return null;
-  const dataset = snapshot.data();
-  let rows = Array.isArray(dataset.rows) ? dataset.rows : [];
-  if (dataset.chunked) {
-    const chunkSnapshots = await getDocs(collection(reference, 'chunks'));
-    rows = chunkSnapshots.docs
-      .map(chunk => chunk.data())
-      .sort((left, right) => left.chunkIndex - right.chunkIndex)
-      .flatMap(chunk => Array.isArray(chunk.rows) ? chunk.rows : []);
-  }
+async function readDataset(uid, name, versionId = null, expectedVersion = null) {
+  const dataset = await readVersionedDataset(database, uid, 'datasets', name, versionId, expectedVersion);
+  if (!dataset.exists) return null;
   return {
-    rows,
-    updatedAt: dataset.updatedAt?.toDate?.() ?? snapshot.updateTime?.toDate?.() ?? null
+    rows: dataset.rows,
+    metadata: dataset.metadata,
+    version: dataset.version ?? dataset.metadata.version ?? 0,
+    versionId: dataset.versionId ?? dataset.metadata.activeVersionId ?? null,
+    updatedAt: dataset.metadata.updatedAt?.toDate?.() ?? null
   };
 }
 
@@ -341,8 +320,14 @@ async function loadData(uid) {
   const metadataRows = accountMetadata?.rows ?? [];
   const metadataById = Object.fromEntries(metadataRows.map(row => [row.id ?? row.accountId, row]));
   const accountNames = Object.keys(metadataById).filter(Boolean);
+  const accountOutputVersions = portfolioTotal?.metadata.accountOutputVersions;
+  const hasPinnedAccountOutputs = accountOutputVersions && typeof accountOutputVersions === 'object';
   const accountDatasets = await Promise.all(
-    accountNames.map(async name => [name, await readDataset(uid, name)])
+    accountNames.map(async name => {
+      const outputVersion = accountOutputVersions?.[name];
+      if (hasPinnedAccountOutputs && !outputVersion?.versionId) return [name, null];
+      return [name, await readDataset(uid, name, outputVersion?.versionId ?? null, outputVersion?.version ?? null)];
+    })
   );
   const accounts = accountDatasets
     .filter(([, dataset]) => dataset)
@@ -356,16 +341,69 @@ async function loadData(uid) {
         accountType: metadata.accountType ?? metadata.type ?? ''
       };
     });
-  const allDatasets = [portfolioTotal, accountMetadata, sectorDefinitions, ...accountDatasets.map(([, dataset]) => dataset)];
   const portfolio = portfolioModel(portfolioTotal?.rows);
-  const spyPrices = await fetchSpyPrices(portfolio);
+  const spyPrices = portfolioTotal?.metadata.sourceDatasetVersions ? [] : await fetchSpyPrices(portfolio);
+  const staleReasons = await getPortfolioStaleReasons(uid, portfolioTotal, accountMetadata);
+  const portfolioPointsWithValues = portfolio.filter(point => point.value !== null).length;
+  const accountsWithHistory = accounts.filter(account => account.history.length > 0).length;
+  const expectedAccounts = accountNames.length;
+  const dataProblems = [];
+  if (!portfolioTotal?.rows.length) dataProblems.push('`datasets/portfolio_total` has no rows');
+  else if (!portfolioPointsWithValues) dataProblems.push('`datasets/portfolio_total` rows were loaded, but no recognized Portfolio Value values were found');
+  if (!metadataRows.length) dataProblems.push('`datasets/account_metadata` has no account rows');
+  if (accounts.length < expectedAccounts) {
+    dataProblems.push(`only ${accounts.length} of ${expectedAccounts} account ledgers referenced by portfolio_total were loaded`);
+  }
+  if (accounts.length && !accountsWithHistory) dataProblems.push('account ledgers were loaded, but none have recognized dated rows');
   return {
     portfolio,
     spyPrices,
     accounts,
     sectorDefinitions: normalizeSectorDefinitions(sectorDefinitions?.rows),
-    updatedAt: allDatasets.map(dataset => dataset?.updatedAt).filter(Boolean).sort((a, b) => b - a)[0] ?? null
+    updatedAt: portfolioTotal?.updatedAt ?? null,
+    staleReasons,
+    dataProblems
   };
+}
+
+function equalVersion(left, right) {
+  return left?.version === right?.version && (left?.versionId ?? null) === (right?.versionId ?? null);
+}
+
+async function getPortfolioStaleReasons(uid, portfolioTotal, accountMetadata) {
+  const expected = portfolioTotal?.metadata.sourceDatasetVersions;
+  if (!expected || typeof expected !== 'object') return ['Portfolio has not been built from the editable transaction sources yet'];
+  const reasons = [];
+  const currentMetadata = {
+    account_metadata: {
+      version: accountMetadata?.version ?? 0,
+      versionId: accountMetadata?.versionId ?? null
+    }
+  };
+  const instantiations = await readDatasetMetadata(database, uid, 'datasets', 'account_instantiations');
+  currentMetadata.account_instantiations = {
+    version: instantiations.version ?? 0,
+    versionId: instantiations.activeVersionId ?? null
+  };
+  const accountRows = accountMetadata?.rows ?? [];
+  const currentSources = await Promise.all(accountRows.map(async row => {
+    const accountId = row.id ?? row.accountId;
+    if (!accountId) return null;
+    const metadata = await readDatasetMetadata(database, uid, 'account_sources', accountId);
+    return [ `account:${accountId}`, {
+      version: metadata.version ?? 0,
+      versionId: metadata.activeVersionId ?? null
+    }];
+  }));
+  currentSources.filter(Boolean).forEach(([key, version]) => { currentMetadata[key] = version; });
+
+  Object.entries(expected).forEach(([key, version]) => {
+    if (!equalVersion(version, currentMetadata[key])) reasons.push(`${key} changed after the last build`);
+  });
+  Object.keys(currentMetadata).forEach(key => {
+    if (!(key in expected)) reasons.push(`${key} was added after the last build`);
+  });
+  return reasons;
 }
 
 function setNotice(message = '') {
@@ -430,12 +468,19 @@ function makeChart(name, canvasId, type, labels, datasets, formatter, extra = {}
   destroyChart(name);
   if (!labels.length || !datasets.some(dataset => dataset.data.some(value => Number.isFinite(value)))) return;
   const canvas = document.getElementById(canvasId);
-  chartInstances[name] = new Chart(canvas, {
-    type,
-    data: { labels, datasets },
-    options: chartOptions(formatter, extra, type),
-    plugins: type === 'doughnut' ? [centerTextPlugin] : []
-  });
+  try {
+    if (typeof Chart === 'undefined') throw new Error('Chart.js did not load.');
+    if (!canvas) throw new Error(`Chart canvas "${canvasId}" was not found.`);
+    chartInstances[name] = new Chart(canvas, {
+      type,
+      data: { labels, datasets },
+      options: chartOptions(formatter, extra, type),
+      plugins: type === 'doughnut' ? [centerTextPlugin] : []
+    });
+  } catch (error) {
+    console.error(`Could not render ${name} chart.`, error);
+    setNotice(`A chart could not load (${error.message}). Portfolio tables and account details are still available; reload to retry the chart.`);
+  }
 }
 
 const centerTextPlugin = {
@@ -695,9 +740,11 @@ function renderPortfolio(data) {
   document.querySelector('#metric-total-gain').classList.toggle('negative', totalGain !== null && totalGain < 0);
   document.querySelector('#metric-blended-return').textContent = percentText(totalReturn);
   document.querySelector('#metric-blended-return').classList.toggle('negative', totalReturn !== null && totalReturn < 0);
-  document.querySelector('#summary-note').textContent = data.updatedAt
-    ? `Updated ${data.updatedAt.toISOString().slice(0, 10)}`
-    : '';
+  const builtDate = data.updatedAt ? data.updatedAt.toISOString().slice(0, 10) : 'not yet built';
+  document.querySelector('#summary-note').textContent = data.staleReasons.length
+    ? `Built ${builtDate} · STALE: ${data.staleReasons.join('; ')}`
+    : `Built ${builtDate} · sources current`;
+  document.querySelector('#summary-note').classList.toggle('stale-build-note', data.staleReasons.length > 0);
 
   const historyLabels = visibleAggregateRows.map(point => point.date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }));
   makeChart('portfolioValue', 'portfolio-value-chart', 'line', historyLabels, [
@@ -819,12 +866,13 @@ function setView(view) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-const state = { data: null, hideAmounts: false, timeframe: 'All', holdingsGainMode: 'dollars', accountHoldingsGainMode: 'dollars', accountSummaryReturnMode: 'percent' };
+const state = { data: null, hideAmounts: true, timeframe: 'All', holdingsGainMode: 'dollars', accountHoldingsGainMode: 'dollars', accountSummaryReturnMode: 'percent' };
 const dashboard = document.querySelector('#dashboard');
 const authGate = document.querySelector('#auth-gate');
 const signIn = async () => {
   setNotice();
   try {
+    await authPersistenceReady;
     const result = await signInWithPopup(auth, provider);
     setNotice(`Google sign-in completed for ${result.user.email ?? 'your account'}; waiting for Firebase session…`);
   } catch (error) {
@@ -840,6 +888,7 @@ document.querySelector('#amount-visibility-toggle').addEventListener('click', ()
   state.hideAmounts = !state.hideAmounts;
   updateAmountVisibility();
 });
+updateAmountVisibility();
 document.querySelector('#sign-out-button').addEventListener('click', () => {
   setNotice();
   signOut(auth).catch(error => setNotice(`Sign-out failed (${error.code ?? 'unknown'}): ${error.message}`));
@@ -945,9 +994,10 @@ document.querySelector('#account-select').addEventListener('change', event => {
   renderAccount(account);
 });
 
-onAuthStateChanged(auth, async user => {
+authPersistenceReady.then(() => onAuthStateChanged(auth, async user => {
   document.querySelector('#sign-in-button').hidden = Boolean(user);
   document.querySelector('#sign-out-button').hidden = !user;
+  document.querySelector('#input-data-button').hidden = !user;
   document.querySelector('#signed-in-email').textContent = user?.email ?? '';
   authGate.hidden = Boolean(user);
   dashboard.hidden = !user;
@@ -960,8 +1010,10 @@ onAuthStateChanged(auth, async user => {
   setNotice('Loading portfolio data from Firestore…');
   try {
     state.data = await loadData(user.uid);
-    setNotice();
     renderPortfolio(state.data);
+    setNotice(state.data.dataProblems.length
+      ? `Dashboard data check: ${state.data.dataProblems.join('; ')}. Expected Firestore documents under users/{your-uid}/datasets, using IDs portfolio_total, account_metadata, and the account IDs listed in account_metadata.`
+      : '');
   } catch (error) {
     setNotice(error.code === 'permission-denied'
       ? 'Firestore denied access. Check that this Google account is allowed by your Firestore rules.'
@@ -969,4 +1021,6 @@ onAuthStateChanged(auth, async user => {
   }
 }, error => {
   setNotice(`Firebase Auth state failed (${error.code ?? 'unknown'}): ${error.message}`);
+})).catch(error => {
+  setNotice(`Firebase Auth persistence failed (${error.code ?? 'unknown'}): ${error.message}`);
 });

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f6f8f4">
+  <title>Input Data / Port</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="page-title">Input Data</h1>
+    <div class="topbar-meta">
+      <span class="live-dot" aria-hidden="true"></span>
+      <span id="signed-in-email" aria-live="polite"></span>
+      <button class="quiet-button" id="sign-out-button" type="button" hidden>Sign out</button>
+      <a class="quiet-button" href="index.html">Back to portfolio</a>
+    </div>
+  </header>
+
+  <p id="input-status" class="notice input-status" role="status" aria-live="polite" hidden></p>
+
+  <section id="auth-gate" class="auth-gate" hidden>
+    <p class="eyebrow">Portfolio session</p>
+    <h1>Session unavailable.</h1>
+    <p class="lede">Return to the portfolio overview and sign in there to access Input Data.</p>
+    <a class="quiet-button" href="index.html">Back to portfolio</a>
+  </section>
+
+  <main id="input-page" class="shell input-shell" hidden>
+    <div class="input-toolbar">
+      <div class="section-heading">
+        <div><p class="eyebrow">Spreadsheet-style data</p><h2>Input Data</h2></div>
+      </div>
+      <button class="google-button" id="build-portfolio-button" type="button">Build portfolio data</button>
+    </div>
+    <section class="panel input-panel spreadsheet-panel" aria-labelledby="dataset-grid-heading">
+      <div class="panel-heading">
+        <h3 id="dataset-grid-heading">Dataset editor</h3>
+        <label class="input-select input-select-inline" for="dataset-select">
+          Dataset
+          <select id="dataset-select"></select>
+        </label>
+      </div>
+      <p id="dataset-help" class="input-hint">Edit cells directly or paste a range from Excel or Google Sheets. Changes are saved when you submit.</p>
+      <div class="input-grid-toolbar">
+        <span id="grid-dirty-indicator" class="muted" aria-live="polite">No unsaved edits</span>
+        <div class="input-actions">
+          <button class="quiet-button" id="add-grid-row" type="button">Add row</button>
+          <button class="quiet-button" id="add-grid-column" type="button">Add column</button>
+          <button class="google-button" id="save-grid" type="button">Submit changes</button>
+        </div>
+      </div>
+      <div class="input-grid-scroll" id="input-grid-scroll">
+        <table class="input-grid" id="input-grid" aria-label="Editable dataset grid">
+          <thead id="input-grid-header"></thead>
+          <tbody id="input-grid-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="input.js"></script>
+</body>
+</html>
