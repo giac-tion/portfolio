@@ -39,26 +39,41 @@
     </div>
     <section class="panel input-panel spreadsheet-panel" aria-labelledby="dataset-grid-heading">
       <div class="panel-heading">
-        <h3 id="dataset-grid-heading">Dataset editor</h3>
+        <h3 id="dataset-grid-heading">Input Data workspace</h3>
         <label class="input-select input-select-inline" for="dataset-select">
           Dataset
           <select id="dataset-select"></select>
         </label>
       </div>
-      <p id="dataset-help" class="input-hint">Edit cells directly or paste a range from Excel or Google Sheets. Changes are saved when you submit.</p>
-      <div class="input-grid-toolbar">
-        <span id="grid-dirty-indicator" class="muted" aria-live="polite">No unsaved edits</span>
-        <div class="input-actions">
-          <button class="quiet-button" id="add-grid-row" type="button">Add row</button>
-          <button class="quiet-button" id="add-grid-column" type="button">Add column</button>
-          <button class="google-button" id="save-grid" type="button">Submit changes</button>
+      <div class="input-tabs" role="tablist" aria-label="Input data views">
+        <button class="input-tab is-active" id="notes-tab" type="button" role="tab" aria-selected="true" aria-controls="notes-tab-panel">Notes</button>
+        <button class="input-tab" id="dataset-tab" type="button" role="tab" aria-selected="false" aria-controls="dataset-tab-panel">Dataset editor</button>
+      </div>
+      <div id="dataset-tab-panel" class="input-tab-panel" role="tabpanel" aria-labelledby="dataset-tab" hidden>
+        <p id="dataset-help" class="input-hint">Edit cells directly or paste a range from Excel or Google Sheets. Changes are saved when you submit.</p>
+        <div class="input-grid-toolbar">
+          <span id="grid-dirty-indicator" class="muted" aria-live="polite">No unsaved edits</span>
+          <div class="input-actions">
+            <button class="quiet-button" id="add-grid-row" type="button">Add row</button>
+            <button class="quiet-button" id="add-grid-column" type="button">Add column</button>
+            <button class="google-button" id="save-grid" type="button">Submit changes</button>
+          </div>
+        </div>
+        <div class="input-grid-scroll" id="input-grid-scroll">
+          <table class="input-grid" id="input-grid" aria-label="Editable dataset grid">
+            <thead id="input-grid-header"></thead>
+            <tbody id="input-grid-body"></tbody>
+          </table>
         </div>
       </div>
-      <div class="input-grid-scroll" id="input-grid-scroll">
-        <table class="input-grid" id="input-grid" aria-label="Editable dataset grid">
-          <thead id="input-grid-header"></thead>
-          <tbody id="input-grid-body"></tbody>
-        </table>
+      <div id="notes-tab-panel" class="input-tab-panel shared-notes-panel" role="tabpanel" aria-labelledby="notes-tab">
+        <p class="input-hint" id="notes-help">Shared notes for Input Data. These notes are saved to Firebase and are available across devices.</p>
+        <label class="account-notes-label" for="account-notes">Input Data notes</label>
+        <textarea id="account-notes" class="account-notes" rows="5" aria-describedby="notes-help" placeholder="Record larger manual dataset updates and changes copied from the main CSV…" disabled></textarea>
+        <div class="input-grid-toolbar">
+          <span id="notes-dirty-indicator" class="muted" aria-live="polite">No unsaved notes</span>
+          <button class="google-button" id="save-notes" type="button" disabled>Submit changes</button>
+        </div>
       </div>
     </section>
   </main>

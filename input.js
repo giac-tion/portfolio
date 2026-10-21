@@ -2,7 +2,7 @@ import { onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/
 import { auth, authPersistenceReady, database } from './firebase.js';
 import {
   acquirePortfolioBuildLock, cleanupDatasetVersions, readVersionedDataset,
-  releasePortfolioBuildLock, writeVersionedDataset
+  readInputDataNotes, releasePortfolioBuildLock, writeInputDataNotes, writeVersionedDataset
 } from './firestore-datasets.js';
 import { aggregatePortfolio, parseDelimited, parseSymbolPricesCsv, processAccountCsv } from './ledger-processing.mjs';
 
@@ -34,7 +34,11 @@ const state = {
   rows: [],
   metadata: {},
   dirty: false,
-  saving: false
+  saving: false,
+  loadingDataset: false,
+  notesDirty: false,
+  notesSaving: false,
+  notesLoaded: false
 };
 
 const statusElement = document.querySelector('#input-status');
@@ -44,6 +48,9 @@ const gridBody = document.querySelector('#input-grid-body');
 const saveButton = document.querySelector('#save-grid');
 const buildButton = document.querySelector('#build-portfolio-button');
 const dirtyIndicator = document.querySelector('#grid-dirty-indicator');
+const notesTextarea = document.querySelector('#account-notes');
+const notesSaveButton = document.querySelector('#save-notes');
+const notesDirtyIndicator = document.querySelector('#notes-dirty-indicator');
 
 function setStatus(message = '', isError = false) {
   statusElement.textContent = message;
@@ -53,7 +60,7 @@ function setStatus(message = '', isError = false) {
 
 function errorMessage(error) {
   if (error.code === 'permission-denied' || error.code === 'firestore/permission-denied') {
-    return 'Firestore denied access. Publish owner-only rules for users/{uid}/datasets and users/{uid}/account_sources, including their versions and chunks, with request.auth.uid == uid.';
+    return 'Firestore denied access. Publish owner-only rules for users/{uid}/datasets, users/{uid}/account_sources, and users/{uid}/account_notes, including nested versions and chunks where applicable, with request.auth.uid == uid.';
   }
   return `${error.code ? `${error.code}: ` : ''}${error.message}`;
 }
@@ -120,10 +127,77 @@ function setSaving(saving) {
   saveButton.disabled = saving || !state.dirty;
   buildButton.disabled = saving;
   saveButton.textContent = saving ? 'Saving…' : 'Submit changes';
-  datasetSelect.disabled = saving;
+  datasetSelect.disabled = saving || state.notesSaving || state.loadingDataset;
   document.querySelector('#add-grid-row').disabled = saving;
   document.querySelector('#add-grid-column').disabled = saving;
   document.querySelectorAll('#input-grid input').forEach(input => { input.disabled = saving; });
+}
+
+function setNotesDirty(dirty) {
+  state.notesDirty = dirty;
+  notesDirtyIndicator.textContent = dirty ? 'Unsaved notes' : 'No unsaved notes';
+  notesDirtyIndicator.classList.toggle('is-dirty', dirty);
+  notesSaveButton.disabled = !dirty || state.notesSaving || !state.notesLoaded;
+}
+
+function setNotesSaving(saving) {
+  state.notesSaving = saving;
+  notesSaveButton.disabled = saving || !state.notesDirty || !state.notesLoaded;
+  notesSaveButton.textContent = saving ? 'Saving…' : 'Submit changes';
+  datasetSelect.disabled = saving || state.saving || state.loadingDataset;
+  notesTextarea.disabled = saving || !state.notesLoaded;
+}
+
+function setInputTab(tab) {
+  const datasetActive = tab === 'dataset';
+  document.querySelector('#dataset-tab').classList.toggle('is-active', datasetActive);
+  document.querySelector('#dataset-tab').setAttribute('aria-selected', String(datasetActive));
+  document.querySelector('#notes-tab').classList.toggle('is-active', !datasetActive);
+  document.querySelector('#notes-tab').setAttribute('aria-selected', String(!datasetActive));
+  document.querySelector('#dataset-tab-panel').hidden = !datasetActive;
+  document.querySelector('#notes-tab-panel').hidden = datasetActive;
+}
+
+function resetInputDataNotes() {
+  state.notesLoaded = false;
+  state.notesDirty = false;
+  notesTextarea.value = '';
+  notesTextarea.disabled = true;
+  document.querySelector('#notes-help').textContent =
+    'Shared notes for Input Data. These notes are saved to Firebase and are available across devices.';
+  setNotesDirty(false);
+}
+
+async function loadInputDataNotes() {
+  resetInputDataNotes();
+  const uid = state.user.uid;
+  const notes = await readInputDataNotes(database, uid);
+  if (state.user?.uid !== uid) return;
+  state.notesLoaded = true;
+  notesTextarea.disabled = false;
+  notesTextarea.value = notes;
+  setNotesDirty(false);
+}
+
+async function submitNotes() {
+  if (state.notesSaving || !state.notesDirty || !state.notesLoaded) return;
+  setNotesSaving(true);
+  setStatus('Saving Input Data notes to Firebase…');
+  try {
+    await writeInputDataNotes(database, state.user.uid, notesTextarea.value);
+    setNotesDirty(false);
+    setStatus('Input Data notes saved to Firebase.');
+  } catch (error) {
+    setStatus(`Could not save Input Data notes: ${errorMessage(error)}`, true);
+  } finally {
+    setNotesSaving(false);
+  }
+}
+
+function renderInputDataNotesError(error) {
+  resetInputDataNotes();
+  document.querySelector('#notes-help').textContent =
+    `Could not load shared notes: ${errorMessage(error)}. Check the owner-only Firestore rule for users/{uid}/account_notes/{noteId}.`;
 }
 
 function renderGrid() {
@@ -221,11 +295,13 @@ async function readGridDataset(key) {
 }
 
 async function loadDataset(key, allowDiscard = false) {
-  if (state.dirty && !allowDiscard && !window.confirm('Discard unsaved grid edits?')) {
+  if (!allowDiscard && state.dirty && !window.confirm('Discard unsaved grid edits?')) {
     datasetSelect.value = state.selectedKey;
     return;
   }
   state.selectedKey = key;
+  state.loadingDataset = true;
+  datasetSelect.disabled = true;
   rememberDatasetKey(state.user.uid, key);
   state.datasetId = '';
   state.collectionName = '';
@@ -259,6 +335,9 @@ async function loadDataset(key, allowDiscard = false) {
     setStatus(accountDenied
       ? `Could not load dataset: Firestore denied read access to users/${state.user.uid}/account_sources/${accountIdFromKey(key)} or its version/chunk documents. Publish owner-only rules for users/{uid}/account_sources (including nested versions/chunks) with request.auth.uid == uid.`
       : `Could not load dataset: ${errorMessage(error)}`, true);
+  } finally {
+    state.loadingDataset = false;
+    datasetSelect.disabled = state.saving || state.notesSaving;
   }
 }
 
@@ -589,6 +668,10 @@ document.querySelector('#add-grid-column').addEventListener('click', addColumn);
 saveButton.addEventListener('click', submitGrid);
 buildButton.addEventListener('click', buildPortfolioData);
 datasetSelect.addEventListener('change', () => loadDataset(datasetSelect.value));
+document.querySelector('#dataset-tab').addEventListener('click', () => setInputTab('dataset'));
+document.querySelector('#notes-tab').addEventListener('click', () => setInputTab('notes'));
+notesTextarea.addEventListener('input', () => setNotesDirty(true));
+notesSaveButton.addEventListener('click', submitNotes);
 document.querySelector('#input-grid').addEventListener('paste', event => {
   if (!event.target.matches('.input-grid-cell')) return;
   try {
@@ -610,8 +693,16 @@ async function onUser(user) {
   document.querySelector('#auth-gate').hidden = Boolean(user);
   document.querySelector('#input-page').hidden = !user;
   if (!user) {
+    resetInputDataNotes();
     setStatus('No active portfolio session was found. Sign in on the overview page, then open Input Data.', true);
     return;
+  }
+  let notesLoadError;
+  try {
+    await loadInputDataNotes();
+  } catch (error) {
+    notesLoadError = error;
+    renderInputDataNotesError(error);
   }
   try {
     const metadata = await readVersionedDataset(database, user.uid, 'datasets', 'account_metadata');
@@ -621,6 +712,7 @@ async function onUser(user) {
   } catch (error) {
     setStatus(`Could not load datasets: ${errorMessage(error)}`, true);
   }
+  if (notesLoadError) setStatus(`Could not load Input Data notes: ${errorMessage(notesLoadError)}`, true);
 }
 
 setStatus('Restoring portfolio sign-in…');

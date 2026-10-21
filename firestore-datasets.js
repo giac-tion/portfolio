@@ -133,6 +133,20 @@ export async function readDatasetMetadata(database, uid, collectionName, dataset
   return snapshot.exists() ? snapshot.data() : {};
 }
 
+export async function readInputDataNotes(database, uid) {
+  const reference = collectionReference(database, uid, 'account_notes', 'input_data');
+  const snapshot = await getDoc(reference);
+  const notes = snapshot.exists() ? snapshot.data().notes ?? '' : '';
+  if (typeof notes !== 'string') throw new TypeError('Input Data notes must be stored as text.');
+  return notes;
+}
+
+export async function writeInputDataNotes(database, uid, notes) {
+  if (typeof notes !== 'string') throw new TypeError('Input Data notes must be a string.');
+  const reference = collectionReference(database, uid, 'account_notes', 'input_data');
+  await setDoc(reference, { notes, updatedAt: serverTimestamp() });
+}
+
 export async function acquirePortfolioBuildLock(database, uid, owner) {
   const reference = collectionReference(database, uid, 'datasets', 'portfolio_total');
   await runTransaction(database, async transaction => {

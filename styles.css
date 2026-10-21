@@ -87,9 +87,19 @@ button, select { font: inherit; }
 .spreadsheet-panel .panel-heading { align-items: end; gap: 18px; }
 .input-select-inline { width: min(420px, 55%); padding: 0; }
 .input-select-inline select { min-width: 0; }
+.input-tabs { display: flex; gap: 6px; margin: 0 23px; padding-top: 4px; border-bottom: 1px solid var(--line); }
+.input-tab { padding: 10px 16px; color: var(--green); border: 1px solid var(--line); border-bottom: 0; border-radius: 3px 3px 0 0; background: #edf1eb; font-size: 12px; font-weight: 700; cursor: pointer; }
+.input-tab:hover { background: #e5ece4; }
+.input-tab.is-active { color: var(--white); border-color: var(--green); background: var(--green); }
+.input-tab:focus-visible { outline: 2px solid var(--green-bright); outline-offset: 2px; }
 .input-grid-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 23px; }
 .input-grid-toolbar .input-actions { justify-content: end; }
 .input-grid-scroll { max-height: 72vh; overflow: auto; border-top: 1px solid var(--line); }
+.shared-notes-panel { display: grid; gap: 14px; padding: 18px 0 4px; }
+.account-notes-label { padding: 0 23px; color: var(--muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.account-notes { width: calc(100% - 46px); min-height: 120px; margin: 0 23px; padding: 10px 12px; color: var(--ink); border: 1px solid var(--line); border-radius: 3px; background: var(--white); font: 12px/1.5 "DM Mono", monospace; resize: vertical; }
+.account-notes:focus { border-color: var(--green); outline: 2px solid #d9f06a66; }
+.shared-notes-panel .input-grid-toolbar { padding-top: 0; }
 .input-grid { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; }
 .input-grid th, .input-grid td { min-width: 170px; padding: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--white); }
 .input-grid thead th { position: sticky; top: 0; z-index: 2; color: var(--muted); background: #f6f8f4; }

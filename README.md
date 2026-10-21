@@ -41,9 +41,15 @@ Editable broker transaction sources are stored separately at:
 users/{uid}/account_sources/{accountId}
 ```
 
+Shared Input Data notes are stored separately from browser storage at:
+
+```text
+users/{uid}/account_notes/input_data
+```
+
 The app reads data for the signed-in UID. Input Data writes only beneath that user's `users/{uid}` path. Firestore rules must restrict reads and writes to the signed-in owner.
 
-To use Input Data and build aggregation, configure Firestore rules to permit the signed-in owner to create, update, and delete documents beneath `datasets` and `account_sources`, including nested versions and chunks. If the current rules deny a request, Firestore returns `permission-denied`; update and publish rules in Firebase Console → Firestore Database → Rules. Merge scoped rules like these into the existing rules (do not replace unrelated rules or allow public writes):
+To use Input Data and build aggregation, configure Firestore rules to permit the signed-in owner to create, update, and delete documents beneath `datasets`, `account_sources`, and `account_notes`, including nested versions and chunks. If the current rules deny a request, Firestore returns `permission-denied`; update and publish rules in Firebase Console → Firestore Database → Rules. Merge scoped rules like these into the existing rules (do not replace unrelated rules or allow public writes):
 
 ```text
 match /users/{uid}/datasets/{datasetId} {
@@ -59,13 +65,17 @@ match /users/{uid}/account_sources/{accountId} {
     allow read, write: if request.auth != null && request.auth.uid == uid;
   }
 }
+
+match /users/{uid}/account_notes/{noteId} {
+  allow read, write: if request.auth != null && request.auth.uid == uid;
+}
 ```
 
 Do not use broad public write rules: the browser client must not be able to access another user's datasets.
 
 ## Input Data page
 
-The **Input Data** button opens `input.html`, which provides a spreadsheet-style grid for `account_metadata`, `sector_definitions`, `account_instantiations`, and each account's transaction source. Edit cells, rename columns, paste tab-separated ranges from Excel or Google Sheets, add rows/columns, then click **Submit changes** to save. The last selected dataset is remembered in this browser; account transaction rows are reloaded from the account's saved Firebase source when the page is reopened. Account rows use the broker's source-transaction CSV columns:
+The **Input Data** button opens `input.html`, which provides a spreadsheet-style grid for `account_metadata`, `sector_definitions`, `account_instantiations`, and each account's transaction source. Edit cells, rename columns, paste tab-separated ranges from Excel or Google Sheets, add rows/columns, then click **Submit changes** to save. The last selected dataset is remembered in this browser; account transaction rows are reloaded from the account's saved Firebase source when the page is reopened. The **Notes** tab appears above the dataset table and contains one shared note for the signed-in user at `users/{uid}/account_notes/input_data`; it is not tied to the selected account or dataset and saves when you click **Submit changes**. Account rows use the broker's source-transaction CSV columns:
 
 | Broker | Required source columns |
 | --- | --- |

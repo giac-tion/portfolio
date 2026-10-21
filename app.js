@@ -884,6 +884,11 @@ const signIn = async () => {
 
 document.querySelector('#sign-in-button').addEventListener('click', signIn);
 document.querySelector('#gate-sign-in-button').addEventListener('click', signIn);
+document.querySelector('#input-data-button').addEventListener('click', event => {
+  if (!window.confirm('WARNING: Data edits can’t be undone. Continue to Input Data?')) {
+    event.preventDefault();
+  }
+});
 document.querySelector('#amount-visibility-toggle').addEventListener('click', () => {
   state.hideAmounts = !state.hideAmounts;
   updateAmountVisibility();
